@@ -6,7 +6,7 @@ RunPod Serverless API for generating video with four modes:
 - **Mode 3a (Multi-keyframe Lip-sync)**: Multiple keyframe images + Audio → Video with keyframe guides
 - **Mode 3b (Multi-keyframe Audio Gen)**: Multiple keyframe images + Duration → Video + Generated audio
 
-**Version**: v51
+**Version**: v53
 
 ## Endpoint
 
@@ -186,7 +186,7 @@ Generate video with multiple keyframe reference images. Supports both lip-sync (
 
 ### Mode 3 Notes
 
-- **Verified**: Mode 3a/3b tested and verified working in v51 (2026-01-31)
+- **Verified**: Mode 3a/3b tested and verified working in v53 (2026-02-01)
 - **Guide-based**: End frames are approximate guides, not exact matches
 - **Max keyframes**: 1-9 keyframes supported
 - **Strength tuning**: Lower strength (0.6-0.8) recommended for non-first frames
@@ -782,7 +782,7 @@ https://storage.googleapis.com/dramaland-public/ugc_media/{job_id}/ltx2_videos/{
 | 3a (lip-sync) | 3 | 15.4s (audio) | fast | ~255s |
 | 3b (audio gen) | 3 | 10.0s | fast | ~321s |
 
-*Times based on RTX 4090/5090, tested with v51*
+*Times based on RTX 4090/5090, tested with v53*
 
 ## Error Codes
 
@@ -795,7 +795,7 @@ https://storage.googleapis.com/dramaland-public/ugc_media/{job_id}/ltx2_videos/{
 | `Duration cannot exceed 30 seconds` | duration > 30 | Use duration <= 30.0 |
 | `At least 1 keyframe is required` | Empty keyframes array | Provide at least 1 keyframe |
 | `Maximum 9 keyframes supported` | Too many keyframes | Use 1-9 keyframes |
-| `Multiframe template not loaded` | KJNodes not installed | Update to Docker v51+ |
+| `Multiframe template not loaded` | KJNodes not installed | Update to Docker v53+ |
 | `ComfyUI failed to start` | GPU initialization error | Retry request |
 | `Generation timeout` | Processing exceeded 10 min | Use shorter duration or retry |
 | `GCS upload failed` | Storage error | Video returned as base64 fallback |
