@@ -491,12 +491,12 @@ class WorkflowBuilder:
         # Add ALL dynamic inputs with "num_guides." prefix
         for i, kf_data in enumerate(keyframe_node_ids):
             idx = i + 1  # LTXVAddGuideMulti uses 1-indexed inputs
-            # Image input - connection with prefix
+            # Image input - connection format [node_id, slot_index]
             guide_multi_inputs[f"num_guides.image_{idx}"] = [kf_data["preprocess_node_id"], 0]
-            # Frame index - try wrapping in tuple/list for ComfyUI compatibility
-            guide_multi_inputs[f"num_guides.frame_idx_{idx}"] = [kf_data["frame_idx"]]
-            # Strength - try wrapping in tuple/list for ComfyUI compatibility
-            guide_multi_inputs[f"num_guides.strength_{idx}"] = [kf_data["strength"]]
+            # Frame index - direct value (NOT array, array would be interpreted as link)
+            guide_multi_inputs[f"num_guides.frame_idx_{idx}"] = kf_data["frame_idx"]
+            # Strength - direct value (NOT array, array would be interpreted as link)
+            guide_multi_inputs[f"num_guides.strength_{idx}"] = kf_data["strength"]
 
         guide_multi_node_id = str(node_id)
         workflow[guide_multi_node_id] = {
@@ -656,7 +656,7 @@ class WorkflowBuilder:
                 "pix_fmt": "yuv420p",
                 "crf": 19,
                 "save_metadata": True,
-                "trim_to_audio": False,
+                "trim_to_audio": True,
                 "pingpong": False,
                 "save_output": True,
                 "images": ["234", 0],
