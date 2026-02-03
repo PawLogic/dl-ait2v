@@ -281,6 +281,9 @@ def handler(event):
         img_compression = input_data.get("img_compression", 23)  # Lower = better quality
         img_strength = input_data.get("img_strength", 1.0)  # First frame injection strength
 
+        # Buffer seconds: extra video duration beyond audio (default 1.0s)
+        buffer_seconds = input_data.get("buffer_seconds", 1.0)
+
         # Build workflow using template
         print("Step 3/4: Building workflow...")
         workflow = workflow_builder.build_workflow(
@@ -300,10 +303,11 @@ def handler(event):
             lora_camera=lora_camera,
             img_compression=img_compression,
             img_strength=img_strength,
+            buffer_seconds=buffer_seconds,
         )
 
         # Get video parameters for response
-        video_params = workflow_builder.get_video_params(audio_duration, fps=30)
+        video_params = workflow_builder.get_video_params(audio_duration, fps=30, buffer_seconds=buffer_seconds)
 
         print(f"  Resolution: {width}x{height}")
         print(f"  Frames: {video_params['num_frames']} @ 30fps = {video_params['actual_duration']:.1f}s")
@@ -544,6 +548,9 @@ def audio_gen_handler(event):
         img_compression = input_data.get("img_compression", 23)
         img_strength = input_data.get("img_strength", 1.0)
 
+        # Buffer seconds: extra video duration beyond target (default 1.0s)
+        buffer_seconds = input_data.get("buffer_seconds", 1.0)
+
         # Build workflow using audio generation template
         print("Step 3/4: Building audio generation workflow...")
         workflow = workflow_builder.build_audio_gen_workflow(
@@ -562,10 +569,11 @@ def audio_gen_handler(event):
             lora_camera=lora_camera,
             img_compression=img_compression,
             img_strength=img_strength,
+            buffer_seconds=buffer_seconds,
         )
 
         # Get video/audio parameters for response
-        gen_params = workflow_builder.get_audio_gen_params(duration, fps=30)
+        gen_params = workflow_builder.get_audio_gen_params(duration, fps=30, buffer_seconds=buffer_seconds)
 
         print(f"  Resolution: {width}x{height}")
         print(f"  Duration: {duration}s")
@@ -872,6 +880,7 @@ def multi_keyframe_handler(event):
         # Mode 3 specific parameters
         trim_to_audio = input_data.get("trim_to_audio", False)  # Default off to prevent flickering
         frame_alignment = input_data.get("frame_alignment", 8)  # Set to 1 to disable alignment
+        buffer_seconds = input_data.get("buffer_seconds", 1.0)  # Extra video duration beyond input
 
         # Allow direct steps override
         steps = input_data.get("steps", preset["steps"])
@@ -902,6 +911,7 @@ def multi_keyframe_handler(event):
             img_compression=img_compression,
             trim_to_audio=trim_to_audio,
             frame_alignment=frame_alignment,
+            buffer_seconds=buffer_seconds,
         )
 
         # Get video parameters for response
@@ -910,7 +920,8 @@ def multi_keyframe_handler(event):
             audio_duration=audio_duration,
             duration=duration if is_mode_3b else None,
             fps=30,
-            frame_alignment=frame_alignment
+            frame_alignment=frame_alignment,
+            buffer_seconds=buffer_seconds
         )
 
         mode_str = "3a (lip-sync)" if is_mode_3a else "3b (audio-gen)"
@@ -923,6 +934,7 @@ def multi_keyframe_handler(event):
         print(f"  Seed: {seed}")
         print(f"  trim_to_audio: {trim_to_audio}")
         print(f"  frame_alignment: {frame_alignment}")
+        print(f"  buffer_seconds: {buffer_seconds}")
 
         # Submit to ComfyUI
         print("Step 4/5: Generating video...")
@@ -1148,14 +1160,14 @@ def unified_handler(event):
 
 
 if __name__ == "__main__":
-    print("Starting Enhanced LTX-2 RunPod Handler (v56)")
+    print("Starting Enhanced LTX-2 RunPod Handler (v57)")
     print("Supported input modes:")
     print("  - Mode 1 (Lip-sync): image_url + audio_url")
     print("  - Mode 2 (Audio Gen): image_url + duration")
     print("  - Mode 3a (Multi-keyframe + Lip-sync): keyframes[] + audio_url")
     print("  - Mode 3b (Multi-keyframe + Audio Gen): keyframes[] + duration")
     print("  - Legacy mode: workflow + images")
-    print("Note: Mode 3 uses chained LTXVAddGuide nodes (v56 fix for flickering)")
+    print("Note: Mode 3 uses chained LTXVAddGuide nodes (v57 fix: last frame alignment)")
 
     # Check if running in Pod mode (not serverless)
     pod_mode = os.environ.get("POD_MODE", "").lower() in ("1", "true", "yes")

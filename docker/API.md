@@ -6,7 +6,7 @@ RunPod Serverless API for generating video with four modes:
 - **Mode 3a (Multi-keyframe Lip-sync)**: Multiple keyframe images + Audio → Video with smooth keyframe transitions
 - **Mode 3b (Multi-keyframe Audio Gen)**: Multiple keyframe images + Duration → Video + Generated audio with smooth keyframe transitions
 
-**Version**: v56
+**Version**: v57
 
 ## Endpoint
 
@@ -71,6 +71,7 @@ Generate video with lip synchronization to provided audio.
 | `lora_detailer` | float | No | 1.0 | Detailer LoRA strength |
 | `img_compression` | int | No | 23 | Image compression (0-50, lower = better) |
 | `img_strength` | float | No | 1.0 | First frame injection strength (0-1) |
+| `buffer_seconds` | float | No | 1.0 | Extra video buffer beyond audio duration |
 
 ---
 
@@ -108,6 +109,7 @@ Generate video AND audio from just an image and duration (no input audio require
 | `lora_detailer` | float | No | 1.0 | Detailer LoRA strength |
 | `img_compression` | int | No | 23 | Image compression (0-50, lower = better) |
 | `img_strength` | float | No | 1.0 | First frame injection strength (0-1) |
+| `buffer_seconds` | float | No | 1.0 | Extra video buffer beyond target duration |
 
 ### Audio Generation Notes
 
@@ -179,6 +181,8 @@ Generate video with multiple keyframe reference images. Supports both lip-sync (
 | `img_compression` | int | No | 23 | Image compression (0-50, lower = better) |
 | `frame_alignment` | int | No | 8 | Keyframe alignment interval (set 1 to disable) |
 | `steps` | int | No | preset | Sampling steps (recommend 25+ if lora_distilled=0) |
+| `buffer_seconds` | float | No | 1.0 | Extra video buffer beyond input duration |
+| `trim_to_audio` | bool | No | false | Trim output video to match audio length |
 
 ### Frame Position
 
@@ -246,6 +250,22 @@ Mode 3 生成的视频中，关键帧之间会有自然的平滑过渡效果。�
 |-----------|-------------|-------|-------|
 | `img_compression` | First frame compression | 0-50 | Lower = better quality, may cause initial freeze |
 | `img_strength` | First frame injection | 0-1.0 | Lower = more animation freedom |
+
+### Buffer and Trimming
+
+| Parameter | Description | Default | Notes |
+|-----------|-------------|---------|-------|
+| `buffer_seconds` | Extra video duration beyond input | 1.0 | Helps prevent end-of-video artifacts |
+| `trim_to_audio` | Trim output to audio length | false | Only for Mode 3/4 |
+
+**How they work together:**
+- `buffer_seconds=1.0` + `trim_to_audio=false` → Video is 1s longer than input duration
+- `buffer_seconds=1.0` + `trim_to_audio=true` → Generate 1s extra, then trim to match audio
+
+**Use cases:**
+- Prevent flickering: Set `buffer_seconds=1.0` (default), `trim_to_audio=true`
+- Keep extra buffer: Set `buffer_seconds=1.0`, `trim_to_audio=false`
+- No buffer: Set `buffer_seconds=0.0`
 
 ### Notes
 
@@ -889,6 +909,16 @@ https://storage.googleapis.com/dramaland-public/ugc_media/{job_id}/ltx2_videos/{
 | Concurrent jobs | Worker pool | Worker pool | Worker pool |
 
 ## Changelog
+
+### v57 (2026-02-03)
+- **修复闪烁**: "last" 关键帧位置现在也参与 `frame_alignment` 对齐，避免末尾闪烁
+- **新增 `buffer_seconds` 参数**: 可配置生成视频比输入时长额外多出的时间（默认 1.0 秒）
+  - Mode 1: 视频比音频多 buffer_seconds
+  - Mode 2: 视频比目标 duration 多 buffer_seconds
+  - Mode 3/4: 视频比音频/duration 多 buffer_seconds
+- **与 `trim_to_audio` 配合使用**:
+  - `buffer_seconds=1.0` + `trim_to_audio=true` → 生成多 1s，但输出时裁剪到音频长度
+  - `buffer_seconds=1.0` + `trim_to_audio=false` → 保留完整生成视频（含 buffer）
 
 ### v56 (2026-02-03)
 - **Mode 3 改进**: 使用链式 `LTXVAddGuide` 节点替代 `LTXVAddGuideMulti`，修复视频末尾闪烁问题

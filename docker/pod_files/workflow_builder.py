@@ -69,6 +69,7 @@ class WorkflowBuilder:
         lora_camera: float = 0.3,
         img_compression: int = 23,
         img_strength: float = 1.0,
+        buffer_seconds: float = 1.0,
     ) -> dict:
         """
         Inject parameters into workflow template.
@@ -90,18 +91,16 @@ class WorkflowBuilder:
             lora_camera: Camera LoRA strength (default 0.3)
             img_compression: Image compression level (default 23, lower = better quality)
             img_strength: First frame injection strength (default 0.9)
+            buffer_seconds: Extra buffer time beyond input duration (default 1.0s)
 
         Returns:
             Complete workflow ready for ComfyUI execution
         """
-        # Calculate frame count to ensure video duration >= audio duration
-        # Formula: num_frames = ceil(audio_duration * fps) + buffer
-        # Buffer ensures video is never shorter than audio
-        # If audio is 10.0s at 30fps = 300 frames, we use 300 frames = 10.0s video
-        num_frames = math.ceil(audio_duration * fps)
-
-        # Add 1 frame buffer to ensure video covers full audio
-        num_frames += 1
+        # Calculate frame count to ensure video duration >= audio duration + buffer
+        # Formula: num_frames = ceil((audio_duration + buffer_seconds) * fps) + 1
+        # Buffer ensures video has extra frames beyond audio
+        total_duration = audio_duration + buffer_seconds
+        num_frames = math.ceil(total_duration * fps) + 1
 
         # Ensure minimum frames (at least 1 second of video)
         if num_frames < 30:
@@ -152,20 +151,22 @@ class WorkflowBuilder:
 
         return replace_value(workflow)
 
-    def get_video_params(self, audio_duration: float, fps: int = 30) -> dict:
+    def get_video_params(self, audio_duration: float, fps: int = 30, buffer_seconds: float = 1.0) -> dict:
         """
         Calculate video parameters from audio duration.
-        Ensures video duration >= audio duration.
+        Ensures video duration >= audio duration + buffer.
 
         Args:
             audio_duration: Audio duration in seconds
             fps: Frames per second
+            buffer_seconds: Extra buffer time beyond audio duration (default 1.0s)
 
         Returns:
-            dict with num_frames, actual_duration, fps, audio_duration
+            dict with num_frames, actual_duration, fps, audio_duration, buffer_seconds
         """
-        # Ensure video is at least as long as audio (with 1 frame buffer)
-        num_frames = math.ceil(audio_duration * fps) + 1
+        # Ensure video is at least as long as audio + buffer
+        total_duration = audio_duration + buffer_seconds
+        num_frames = math.ceil(total_duration * fps) + 1
         if num_frames < 30:
             num_frames = 30
 
@@ -173,6 +174,7 @@ class WorkflowBuilder:
             "num_frames": num_frames,
             "actual_duration": num_frames / fps,
             "audio_duration": audio_duration,
+            "buffer_seconds": buffer_seconds,
             "fps": fps,
         }
 
@@ -193,6 +195,7 @@ class WorkflowBuilder:
         lora_camera: float = 0.3,
         img_compression: int = 23,
         img_strength: float = 1.0,
+        buffer_seconds: float = 1.0,
     ) -> dict:
         """
         Build workflow for Image-to-Video+Audio generation (no input audio).
@@ -216,6 +219,7 @@ class WorkflowBuilder:
             lora_camera: Camera LoRA strength (default 0.3)
             img_compression: Image compression level (default 23)
             img_strength: First frame injection strength (default 1.0)
+            buffer_seconds: Extra buffer time beyond target duration (default 1.0s)
 
         Returns:
             Complete workflow ready for ComfyUI execution
@@ -226,12 +230,13 @@ class WorkflowBuilder:
         if self.audio_gen_template is None:
             raise RuntimeError("Audio generation template not loaded")
 
-        # Calculate video frames (30 fps)
-        num_frames = math.ceil(duration * fps) + 1
+        # Calculate video frames (30 fps) with buffer
+        total_duration = duration + buffer_seconds
+        num_frames = math.ceil(total_duration * fps) + 1
         if num_frames < 30:
             num_frames = 30
 
-        # Calculate audio frames (25 Hz - LTX audio frame rate)
+        # Calculate audio frames (25 Hz - LTX audio frame rate) - no buffer for audio
         audio_frames = math.ceil(duration * 25)
         if audio_frames < 25:
             audio_frames = 25
@@ -261,21 +266,24 @@ class WorkflowBuilder:
 
         return workflow
 
-    def get_audio_gen_params(self, duration: float, fps: int = 30) -> dict:
+    def get_audio_gen_params(self, duration: float, fps: int = 30, buffer_seconds: float = 1.0) -> dict:
         """
         Calculate video and audio parameters for audio generation mode.
 
         Args:
             duration: Target duration in seconds
             fps: Video frames per second
+            buffer_seconds: Extra buffer time beyond target duration (default 1.0s)
 
         Returns:
-            dict with num_frames, audio_frames, actual_duration, fps
+            dict with num_frames, audio_frames, actual_duration, fps, buffer_seconds
         """
-        num_frames = math.ceil(duration * fps) + 1
+        total_duration = duration + buffer_seconds
+        num_frames = math.ceil(total_duration * fps) + 1
         if num_frames < 30:
             num_frames = 30
 
+        # Audio frames without buffer (audio matches target duration)
         audio_frames = math.ceil(duration * 25)
         if audio_frames < 25:
             audio_frames = 25
@@ -286,6 +294,7 @@ class WorkflowBuilder:
             "actual_video_duration": num_frames / fps,
             "actual_audio_duration": audio_frames / 25,
             "target_duration": duration,
+            "buffer_seconds": buffer_seconds,
             "fps": fps,
         }
 
@@ -310,8 +319,14 @@ class WorkflowBuilder:
 
         if position == "first":
             return 0
+
         if position == "last":
-            return last_frame  # Explicit last frame index instead of -1
+            # v57 fix: Apply frame alignment to last frame too
+            # This ensures all keyframes are on consistent 8-frame boundaries
+            if frame_alignment > 1:
+                aligned = (last_frame // frame_alignment) * frame_alignment
+                return max(0, aligned)
+            return last_frame
 
         # Normalize to float
         try:
@@ -322,11 +337,15 @@ class WorkflowBuilder:
         # Clamp to valid range
         pos = max(0.0, min(1.0, pos))
 
-        # Calculate frame index
         if pos >= 1.0:
-            return last_frame  # Explicit last frame index
+            # Same alignment logic as "last"
+            if frame_alignment > 1:
+                aligned = (last_frame // frame_alignment) * frame_alignment
+                return max(0, aligned)
+            return last_frame
+
         if pos <= 0.0:
-            return 0  # First frame
+            return 0
 
         # Calculate intermediate frame index
         idx = int(pos * last_frame)
@@ -358,6 +377,7 @@ class WorkflowBuilder:
         img_compression: int = 23,
         trim_to_audio: bool = False,
         frame_alignment: int = 8,
+        buffer_seconds: float = 1.0,
     ) -> dict:
         """
         Build workflow for multi-keyframe video generation (Mode 3).
@@ -386,6 +406,7 @@ class WorkflowBuilder:
             img_compression: Image compression level (default 23)
             trim_to_audio: Whether to trim video to audio length (default False)
             frame_alignment: Frame alignment interval for keyframes (default 8, set to 1 to disable)
+            buffer_seconds: Extra buffer time beyond input duration (default 1.0s)
 
         Returns:
             Complete workflow ready for ComfyUI execution
@@ -402,15 +423,17 @@ class WorkflowBuilder:
         if len(keyframes) > self.MAX_KEYFRAMES:
             raise ValueError(f"Maximum {self.MAX_KEYFRAMES} keyframes supported")
 
-        # Determine mode and calculate frames
+        # Determine mode and calculate frames (with buffer)
         is_audio_gen = audio_name is None and duration is not None
         if is_audio_gen:
             # Mode 3b: Audio generation
-            num_frames = math.ceil(duration * fps) + 1
-            audio_frames = math.ceil(duration * 25)
+            total_duration = duration + buffer_seconds
+            num_frames = math.ceil(total_duration * fps) + 1
+            audio_frames = math.ceil(duration * 25)  # Audio frames without buffer
         else:
             # Mode 3a: Lip-sync with input audio
-            num_frames = math.ceil(audio_duration * fps) + 1
+            total_duration = audio_duration + buffer_seconds
+            num_frames = math.ceil(total_duration * fps) + 1
             audio_frames = None
 
         if num_frames < 30:
@@ -700,7 +723,8 @@ class WorkflowBuilder:
         duration: Optional[float] = None,
         audio_duration: Optional[float] = None,
         fps: int = 30,
-        frame_alignment: int = 8
+        frame_alignment: int = 8,
+        buffer_seconds: float = 1.0
     ) -> dict:
         """
         Calculate video/audio parameters for multiframe mode.
@@ -711,19 +735,22 @@ class WorkflowBuilder:
             audio_duration: Audio duration for lip-sync mode
             fps: Video frames per second
             frame_alignment: Frame alignment interval (default 8, set to 1 to disable)
+            buffer_seconds: Extra buffer time beyond input duration (default 1.0s)
 
         Returns:
-            dict with num_frames, audio_frames, keyframe info, etc.
+            dict with num_frames, audio_frames, keyframe info, buffer_seconds, etc.
         """
         is_audio_gen = audio_duration is None and duration is not None
 
         if is_audio_gen:
             target_duration = duration
-            num_frames = math.ceil(duration * fps) + 1
-            audio_frames = math.ceil(duration * 25)
+            total_duration = duration + buffer_seconds
+            num_frames = math.ceil(total_duration * fps) + 1
+            audio_frames = math.ceil(duration * 25)  # Audio without buffer
         else:
             target_duration = audio_duration
-            num_frames = math.ceil(audio_duration * fps) + 1
+            total_duration = audio_duration + buffer_seconds
+            num_frames = math.ceil(total_duration * fps) + 1
             audio_frames = None
 
         if num_frames < 30:
@@ -745,6 +772,7 @@ class WorkflowBuilder:
             "audio_frames": audio_frames,
             "actual_video_duration": num_frames / fps,
             "target_duration": target_duration,
+            "buffer_seconds": buffer_seconds,
             "fps": fps,
             "mode": "audio_gen" if is_audio_gen else "lip_sync",
             "num_keyframes": len(keyframes),
@@ -772,6 +800,7 @@ class WorkflowBuilder:
         img_compression: int = 23,
         trim_to_audio: bool = False,
         frame_alignment: int = 8,
+        buffer_seconds: float = 1.0,
     ) -> dict:
         """
         Build workflow for multi-keyframe video generation using chained LTXVAddGuide nodes (Mode 4).
@@ -805,6 +834,7 @@ class WorkflowBuilder:
             img_compression: Image compression level (default 23)
             trim_to_audio: Whether to trim video to audio length (default False)
             frame_alignment: Frame alignment interval for keyframes (default 8)
+            buffer_seconds: Extra buffer time beyond input duration (default 1.0s)
 
         Returns:
             Complete workflow ready for ComfyUI execution
@@ -821,15 +851,17 @@ class WorkflowBuilder:
         if len(keyframes) > self.MAX_KEYFRAMES:
             raise ValueError(f"Maximum {self.MAX_KEYFRAMES} keyframes supported")
 
-        # Determine mode and calculate frames
+        # Determine mode and calculate frames (with buffer)
         is_audio_gen = audio_name is None and duration is not None
         if is_audio_gen:
             # Mode 4b: Audio generation
-            num_frames = math.ceil(duration * fps) + 1
-            audio_frames = math.ceil(duration * 25)
+            total_duration = duration + buffer_seconds
+            num_frames = math.ceil(total_duration * fps) + 1
+            audio_frames = math.ceil(duration * 25)  # Audio frames without buffer
         else:
             # Mode 4a: Lip-sync with input audio
-            num_frames = math.ceil(audio_duration * fps) + 1
+            total_duration = audio_duration + buffer_seconds
+            num_frames = math.ceil(total_duration * fps) + 1
             audio_frames = None
 
         if num_frames < 30:
