@@ -92,13 +92,19 @@ download_if_missing \
     "https://huggingface.co/Lightricks/LTX-2-19b-LoRA-Camera-Control-Dolly-In/resolve/main/ltx-2-19b-lora-camera-control-dolly-in.safetensors" \
     200000000 &
 
+# LoRA I2V Adapter (~4.93GB) - MachineDelusions Image2Video Adapter
+download_if_missing \
+    "$MODEL_PATH/loras/LTX-2-Image2Vid-Adapter.safetensors" \
+    "https://huggingface.co/MachineDelusions/LTX-2_Image2Video_Adapter_LoRa/resolve/main/LTX-2-Image2Vid-Adapter.safetensors" \
+    4000000000 &
+
 # 等待所有下载完成
 wait
 
 echo ""
 echo "=== Final Model Status ==="
 ls -lh "$MODEL_PATH/checkpoints/" 2>/dev/null | grep -v "^total" | head -3
-ls -lh "$MODEL_PATH/loras/" 2>/dev/null | grep -v "^total" | head -5
+ls -lh "$MODEL_PATH/loras/" 2>/dev/null | grep -v "^total" | head -6
 
 echo ""
 echo "Starting RunPod Handler..."

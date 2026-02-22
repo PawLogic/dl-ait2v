@@ -35,6 +35,7 @@ QUALITY_PRESETS = {
         "lora_distilled": 0.6,
         "lora_detailer": 0.5,
         "lora_camera": 0.3,
+        "lora_i2v": 0.8,
         "description": "Fast preview quality"
     },
     "high": {
@@ -42,6 +43,7 @@ QUALITY_PRESETS = {
         "lora_distilled": 0.6,
         "lora_detailer": 1.0,
         "lora_camera": 0.3,
+        "lora_i2v": 0.8,
         "description": "Production quality (test_720p.py standard)"
     },
     "ultra": {
@@ -49,6 +51,7 @@ QUALITY_PRESETS = {
         "lora_distilled": 0.8,
         "lora_detailer": 1.0,
         "lora_camera": 0.3,
+        "lora_i2v": 1.0,
         "description": "Maximum quality"
     }
 }
@@ -276,6 +279,7 @@ def handler(event):
         lora_camera = input_data.get("lora_camera", preset["lora_camera"])
         lora_distilled = input_data.get("lora_distilled", preset["lora_distilled"])
         lora_detailer = input_data.get("lora_detailer", preset["lora_detailer"])
+        lora_i2v = input_data.get("lora_i2v", preset["lora_i2v"])
 
         # Image preprocessing parameters
         img_compression = input_data.get("img_compression", 23)  # Lower = better quality
@@ -307,6 +311,7 @@ def handler(event):
             lora_distilled=lora_distilled,
             lora_detailer=lora_detailer,
             lora_camera=lora_camera,
+            lora_i2v=lora_i2v,
             img_compression=img_compression,
             img_strength=img_strength,
             buffer_seconds=buffer_seconds,
@@ -549,6 +554,7 @@ def audio_gen_handler(event):
         lora_camera = input_data.get("lora_camera", preset["lora_camera"])
         lora_distilled = input_data.get("lora_distilled", preset["lora_distilled"])
         lora_detailer = input_data.get("lora_detailer", preset["lora_detailer"])
+        lora_i2v = input_data.get("lora_i2v", preset["lora_i2v"])
 
         # Image preprocessing parameters
         img_compression = input_data.get("img_compression", 23)
@@ -579,6 +585,7 @@ def audio_gen_handler(event):
             lora_distilled=lora_distilled,
             lora_detailer=lora_detailer,
             lora_camera=lora_camera,
+            lora_i2v=lora_i2v,
             img_compression=img_compression,
             img_strength=img_strength,
             buffer_seconds=buffer_seconds,
@@ -885,6 +892,7 @@ def multi_keyframe_handler(event):
         lora_camera = input_data.get("lora_camera", preset["lora_camera"])
         lora_distilled = input_data.get("lora_distilled", preset["lora_distilled"])
         lora_detailer = input_data.get("lora_detailer", preset["lora_detailer"])
+        lora_i2v = input_data.get("lora_i2v", preset["lora_i2v"])
 
         # Image preprocessing parameters
         img_compression = input_data.get("img_compression", 23)
@@ -928,6 +936,7 @@ def multi_keyframe_handler(event):
             lora_distilled=lora_distilled,
             lora_detailer=lora_detailer,
             lora_camera=lora_camera,
+            lora_i2v=lora_i2v,
             img_compression=img_compression,
             trim_to_audio=trim_to_audio,
             frame_alignment=frame_alignment,
@@ -1183,7 +1192,7 @@ def unified_handler(event):
 
 
 if __name__ == "__main__":
-    print("Starting Enhanced LTX-2 RunPod Handler (v60)")
+    print("Starting Enhanced LTX-2 RunPod Handler (v62)")
     print("Supported input modes:")
     print("  - Mode 1 (Lip-sync): image_url + audio_url")
     print("  - Mode 2 (Audio Gen): image_url + duration")

@@ -6,7 +6,7 @@ RunPod Serverless API for generating video with four modes:
 - **Mode 3a (Multi-keyframe Lip-sync)**: Multiple keyframe images + Audio → Video with smooth keyframe transitions
 - **Mode 3b (Multi-keyframe Audio Gen)**: Multiple keyframe images + Duration → Video + Generated audio with smooth keyframe transitions
 
-**Version**: v60
+**Version**: v61
 
 ## Endpoint
 
@@ -69,6 +69,7 @@ Generate video with lip synchronization to provided audio.
 | `lora_camera` | float | No | 0.3 | Camera LoRA (0 = disable dolly-in) |
 | `lora_distilled` | float | No | 0.6 | Distilled LoRA strength |
 | `lora_detailer` | float | No | 1.0 | Detailer LoRA strength |
+| `lora_i2v` | float | No | 0.8 | I2V Adapter LoRA strength (0 = disable) |
 | `img_compression` | int | No | 23 | Image compression (0-50, lower = better) |
 | `img_strength` | float | No | 1.0 | First frame injection strength (0-1) |
 | `buffer_seconds` | float | No | 1.0 | Extra video buffer beyond audio duration |
@@ -108,6 +109,7 @@ Generate video AND audio from just an image and duration (no input audio require
 | `lora_camera` | float | No | 0.3 | Camera LoRA (0 = disable dolly-in) |
 | `lora_distilled` | float | No | 0.6 | Distilled LoRA strength |
 | `lora_detailer` | float | No | 1.0 | Detailer LoRA strength |
+| `lora_i2v` | float | No | 0.8 | I2V Adapter LoRA strength (0 = disable) |
 | `img_compression` | int | No | 23 | Image compression (0-50, lower = better) |
 | `img_strength` | float | No | 1.0 | First frame injection strength (0-1) |
 | `buffer_seconds` | float | No | 1.0 | Extra video buffer beyond target duration |
@@ -180,6 +182,7 @@ Generate video with multiple keyframe reference images. Supports both lip-sync (
 | `lora_camera` | float | No | 0.3 | Camera LoRA (0 = disable dolly-in) |
 | `lora_distilled` | float | No | 0.6 | Distilled LoRA strength (0 = disable, needs more steps) |
 | `lora_detailer` | float | No | 1.0 | Detailer LoRA strength |
+| `lora_i2v` | float | No | 0.8 | I2V Adapter LoRA strength (0 = disable) |
 | `img_compression` | int | No | 23 | Image compression (0-50, lower = better) |
 | `frame_alignment` | int | No | 8 | Keyframe alignment interval (set 1 to disable) |
 | `steps` | int | No | preset | Sampling steps (recommend 25+ if lora_distilled=0) |
@@ -234,11 +237,11 @@ Mode 3 生成的视频中，关键帧之间会有自然的平滑过渡效果。�
 
 ### Quality Presets
 
-| Preset | Steps | Distilled | Detailer | Camera | Use Case |
-|--------|-------|-----------|----------|--------|----------|
-| `fast` | 8 | 0.6 | 0.5 | 0.3 | Testing, iteration |
-| `high` | 8 | 0.6 | 1.0 | 0.3 | Production (default) |
-| `ultra` | 12 | 0.8 | 1.0 | 0.3 | Maximum quality |
+| Preset | Steps | Distilled | Detailer | Camera | I2V | Use Case |
+|--------|-------|-----------|----------|--------|-----|----------|
+| `fast` | 8 | 0.6 | 0.5 | 0.3 | 0.8 | Testing, iteration |
+| `high` | 8 | 0.6 | 1.0 | 0.3 | 0.8 | Production (default) |
+| `ultra` | 12 | 0.8 | 1.0 | 0.3 | 1.0 | Maximum quality |
 
 ### LoRA Parameters
 
@@ -247,6 +250,7 @@ Mode 3 生成的视频中，关键帧之间会有自然的平滑过渡效果。�
 | `lora_camera` | Dolly-in camera effect | 0-1.0 | Set 0 to disable |
 | `lora_distilled` | Inference acceleration | 0.4-0.8 | Lower = faster |
 | `lora_detailer` | Detail enhancement | 0.5-1.0 | Higher = more detail |
+| `lora_i2v` | I2V Adapter (image fidelity & motion) | 0-1.0 | Set 0 to disable; not trained on audio layers |
 
 ### Image Parameters
 
@@ -929,6 +933,14 @@ https://storage.googleapis.com/dramaland-public/ugc_media/{job_id}/ltx2_videos/{
 | Concurrent jobs | Worker pool | Worker pool | Worker pool |
 
 ## Changelog
+
+### v61 (2026-02-22)
+- **I2V Adapter LoRA**: 新增 MachineDelusions I2V Adapter LoRA (rank 256, ~4.93GB)
+  - 提升图像保真度和运动连贯性
+  - 新增 `lora_i2v` 参数（默认 0.8，0 = 禁用）
+  - LoRA chain: Distilled → Detailer → Camera → **I2V Adapter** → Sampler
+  - 注意：I2V Adapter 未训练音频层，可能对音频有轻微副作用
+  - Quality Presets: fast/high = 0.8, ultra = 1.0
 
 ### v60 (2026-02-04)
 - **帧率参数化**: 新增 `fps` 参数（默认 30fps，范围 1-60）

@@ -12,7 +12,7 @@ LTX-2 Video Generation RunPod Serverless API with four modes:
 
 Uses LTX-2 19B model with LoRA optimizations.
 
-**Current Version**: v60 (configurable fps parameter)
+**Current Version**: v62 (zero-strength LoRA optimization)
 
 ## Architecture
 
@@ -27,7 +27,7 @@ RunPod Serverless API (endpoint: 42qdgmzjc9ldy5)
 GPU Workers (RTX 4090/5090, 24GB+ VRAM)
     ├─ ComfyUI Framework
     ├─ LTX-2 19B Model (FP8)
-    ├─ LoRA Models (distilled, detailer, camera)
+    ├─ LoRA Models (distilled, detailer, camera, i2v-adapter)
     └─ KJNodes (Chained LTXVAddGuide for Mode 3)
     ↓
 GCS Upload (dramaland-public bucket)
@@ -62,8 +62,8 @@ LTX/
 ```bash
 # Build & Push
 cd docker
-docker build --platform linux/amd64 -t nooka210/ltx2-comfyui-worker:v60 .
-docker push nooka210/ltx2-comfyui-worker:v60
+docker build --platform linux/amd64 -t nooka210/ltx2-comfyui-worker:v62 .
+docker push nooka210/ltx2-comfyui-worker:v62
 
 # Test Mode 1: Lip-sync
 curl -X POST "https://api.runpod.ai/v2/42qdgmzjc9ldy5/run" \
@@ -105,6 +105,7 @@ See `docker/API.md` for full documentation.
 | LoRA Distilled | ~7.6GB | `loras/ltx-video-2b-v0.9.7-distilled-lora-384.safetensors` |
 | LoRA Detailer | ~2.5GB | `loras/ltx-video-2b-v0.9.7-detailer-lora-768.safetensors` |
 | LoRA Camera | ~313MB | `loras/ltx-video-2b-v0.9.5-camera-control-dolly-in-lora.safetensors` |
+| LoRA I2V Adapter | ~4.93GB | `loras/LTX-2-Image2Vid-Adapter.safetensors` |
 
 ## LoRA 配置
 
@@ -113,6 +114,7 @@ See `docker/API.md` for full documentation.
 | Distilled | 加速推理 | 0.6 |
 | Detailer | 增强细节 | 1.0 |
 | Camera (dolly-in) | 推镜头效果 | 0.3 |
+| I2V Adapter | 图像保真度与运动连贯性 | 0.8 |
 
 ## 图像参数
 

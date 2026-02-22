@@ -67,6 +67,7 @@ class WorkflowBuilder:
         lora_distilled: float = 0.6,
         lora_detailer: float = 1.0,
         lora_camera: float = 0.3,
+        lora_i2v: float = 0.8,
         img_compression: int = 23,
         img_strength: float = 1.0,
         buffer_seconds: float = 1.0,
@@ -89,6 +90,7 @@ class WorkflowBuilder:
             lora_distilled: Distilled LoRA strength (default 0.6)
             lora_detailer: Detailer LoRA strength (default 1.0)
             lora_camera: Camera LoRA strength (default 0.3)
+            lora_i2v: I2V Adapter LoRA strength (default 0.8)
             img_compression: Image compression level (default 23, lower = better quality)
             img_strength: First frame injection strength (default 0.9)
             buffer_seconds: Extra buffer time beyond input duration (default 1.0s)
@@ -123,12 +125,16 @@ class WorkflowBuilder:
             "LORA_DISTILLED_STRENGTH": lora_distilled,
             "LORA_DETAILER_STRENGTH": lora_detailer,
             "LORA_CAMERA_STRENGTH": lora_camera,
+            "LORA_I2V_STRENGTH": lora_i2v,
             "IMG_COMPRESSION": img_compression,
             "IMG_STRENGTH": img_strength,
         }
 
         # Deep copy template and inject parameters
         workflow = self._inject_parameters(self.template, params)
+
+        # Remove LoRA nodes with strength=0 to save GPU memory and compute
+        workflow = self._remove_zero_strength_loras(workflow)
 
         return workflow
 
@@ -150,6 +156,41 @@ class WorkflowBuilder:
                 return obj
 
         return replace_value(workflow)
+
+    def _remove_zero_strength_loras(self, workflow: dict) -> dict:
+        """
+        Remove LoraLoaderModelOnly nodes with strength_model=0 and reconnect the chain.
+
+        When a LoRA strength is 0, loading it wastes GPU memory and compute time.
+        This method removes such nodes and rewires downstream references to the
+        upstream model source, preserving the chain integrity.
+        """
+        removed = True
+        while removed:
+            removed = False
+            for node_id in list(workflow.keys()):
+                node = workflow[node_id]
+                if node.get("class_type") != "LoraLoaderModelOnly":
+                    continue
+                strength = node["inputs"].get("strength_model", 1.0)
+                if isinstance(strength, (int, float)) and strength == 0:
+                    # Get upstream model reference (what this node receives)
+                    upstream_ref = node["inputs"]["model"]
+                    lora_name = node["inputs"].get("lora_name", "unknown")
+                    # Replace all downstream references to [node_id, 0] with upstream_ref
+                    for other_id, other_node in workflow.items():
+                        if "inputs" not in other_node:
+                            continue
+                        for key, value in other_node["inputs"].items():
+                            if isinstance(value, list) and len(value) == 2:
+                                if str(value[0]) == str(node_id) and value[1] == 0:
+                                    other_node["inputs"][key] = upstream_ref
+                    # Remove the node
+                    del workflow[node_id]
+                    print(f"  [LoRA optimization] Removed {lora_name} (strength=0, node {node_id})")
+                    removed = True
+                    break  # Restart scan since workflow changed
+        return workflow
 
     def get_video_params(self, audio_duration: float, fps: int = 24, buffer_seconds: float = 1.0) -> dict:
         """
@@ -193,6 +234,7 @@ class WorkflowBuilder:
         lora_distilled: float = 0.6,
         lora_detailer: float = 1.0,
         lora_camera: float = 0.3,
+        lora_i2v: float = 0.8,
         img_compression: int = 23,
         img_strength: float = 1.0,
         buffer_seconds: float = 1.0,
@@ -217,6 +259,7 @@ class WorkflowBuilder:
             lora_distilled: Distilled LoRA strength (default 0.6)
             lora_detailer: Detailer LoRA strength (default 1.0)
             lora_camera: Camera LoRA strength (default 0.3)
+            lora_i2v: I2V Adapter LoRA strength (default 0.8)
             img_compression: Image compression level (default 23)
             img_strength: First frame injection strength (default 1.0)
             buffer_seconds: Extra buffer time beyond target duration (default 1.0s)
@@ -257,12 +300,16 @@ class WorkflowBuilder:
             "LORA_DISTILLED_STRENGTH": lora_distilled,
             "LORA_DETAILER_STRENGTH": lora_detailer,
             "LORA_CAMERA_STRENGTH": lora_camera,
+            "LORA_I2V_STRENGTH": lora_i2v,
             "IMG_COMPRESSION": img_compression,
             "IMG_STRENGTH": img_strength,
         }
 
         # Deep copy template and inject parameters
         workflow = self._inject_parameters(self.audio_gen_template, params)
+
+        # Remove LoRA nodes with strength=0 to save GPU memory and compute
+        workflow = self._remove_zero_strength_loras(workflow)
 
         return workflow
 
@@ -374,6 +421,7 @@ class WorkflowBuilder:
         lora_distilled: float = 0.6,
         lora_detailer: float = 1.0,
         lora_camera: float = 0.3,
+        lora_i2v: float = 0.8,
         img_compression: int = 23,
         trim_to_audio: bool = False,
         frame_alignment: int = 8,
@@ -403,6 +451,7 @@ class WorkflowBuilder:
             lora_distilled: Distilled LoRA strength (default 0.6)
             lora_detailer: Detailer LoRA strength (default 1.0)
             lora_camera: Camera LoRA strength (default 0.3)
+            lora_i2v: I2V Adapter LoRA strength (default 0.8)
             img_compression: Image compression level (default 23)
             trim_to_audio: Whether to trim video to audio length (default False)
             frame_alignment: Frame alignment interval for keyframes (default 8, set to 1 to disable)
@@ -711,9 +760,13 @@ class WorkflowBuilder:
             "LORA_DISTILLED_STRENGTH": lora_distilled,
             "LORA_DETAILER_STRENGTH": lora_detailer,
             "LORA_CAMERA_STRENGTH": lora_camera,
+            "LORA_I2V_STRENGTH": lora_i2v,
         }
 
         workflow = self._inject_parameters(workflow, params)
+
+        # Remove LoRA nodes with strength=0 to save GPU memory and compute
+        workflow = self._remove_zero_strength_loras(workflow)
 
         return workflow
 
@@ -817,6 +870,7 @@ class WorkflowBuilder:
         lora_distilled: float = 0.6,
         lora_detailer: float = 1.0,
         lora_camera: float = 0.3,
+        lora_i2v: float = 0.8,
         img_compression: int = 23,
         trim_to_audio: bool = False,
         frame_alignment: int = 8,
@@ -1210,8 +1264,12 @@ class WorkflowBuilder:
             "LORA_DISTILLED_STRENGTH": lora_distilled,
             "LORA_DETAILER_STRENGTH": lora_detailer,
             "LORA_CAMERA_STRENGTH": lora_camera,
+            "LORA_I2V_STRENGTH": lora_i2v,
         }
 
         workflow = self._inject_parameters(workflow, params)
+
+        # Remove LoRA nodes with strength=0 to save GPU memory and compute
+        workflow = self._remove_zero_strength_loras(workflow)
 
         return workflow

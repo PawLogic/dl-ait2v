@@ -33,6 +33,15 @@
     "class_type": "LoraLoaderModelOnly",
     "_meta": {"title": "LoRA Camera"}
   },
+  "291": {
+    "inputs": {
+      "lora_name": "LTX-2-Image2Vid-Adapter.safetensors",
+      "strength_model": "LORA_I2V_STRENGTH",
+      "model": ["289", 0]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {"title": "LoRA I2V Adapter"}
+  },
   "155": {
     "inputs": {
       "text_encoder": "gemma_3_12B_it_fp8_scaled.safetensors",
@@ -163,7 +172,7 @@
       "scheduler": "simple",
       "steps": "STEPS",
       "denoise": 1.0,
-      "model": ["289", 0]
+      "model": ["291", 0]
     },
     "class_type": "BasicScheduler",
     "_meta": {"title": "Scheduler"}
@@ -171,7 +180,7 @@
   "153": {
     "inputs": {
       "cfg": "CFG_SCALE",
-      "model": ["289", 0],
+      "model": ["291", 0],
       "positive": ["164", 0],
       "negative": ["164", 1]
     },
