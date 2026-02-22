@@ -71,7 +71,7 @@ download_if_missing \
 # Text Encoder (~13GB)
 download_if_missing \
     "$MODEL_PATH/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors" \
-    "https://huggingface.co/Kijai/LTXV2_comfy/resolve/main/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors" \
+    "https://huggingface.co/Comfy-Org/ltx-2/resolve/main/split_files/text_encoders/gemma_3_12B_it_fp8_scaled.safetensors" \
     12000000000 &
 
 # LoRA distilled (~7.67GB)
