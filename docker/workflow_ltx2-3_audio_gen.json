@@ -1,0 +1,618 @@
+{
+  "233": {
+    "inputs": {
+      "strength": 1,
+      "model": [
+        "247",
+        0
+      ]
+    },
+    "class_type": "CFGNorm",
+    "_meta": {
+      "title": "CFGNorm"
+    }
+  },
+  "241": {
+    "inputs": {
+      "clip_name1": "gemma_3_12B_it_fp8_scaled.safetensors",
+      "clip_name2": "ltx-2.3_text_projection_bf16.safetensors",
+      "type": "ltxv",
+      "device": "default"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": {
+      "title": "DualCLIPLoader"
+    }
+  },
+  "242": {
+    "inputs": {
+      "vae_name": "LTX23_video_vae_bf16.safetensors",
+      "device": "main_device",
+      "weight_dtype": "bf16"
+    },
+    "class_type": "VAELoaderKJ",
+    "_meta": {
+      "title": "VAELoader KJ"
+    }
+  },
+  "244": {
+    "inputs": {
+      "model_name": "latent_upscale_model.safetensors"
+    },
+    "class_type": "LatentUpscaleModelLoader",
+    "_meta": {
+      "title": "Load Latent Upscale Model"
+    }
+  },
+  "245": {
+    "inputs": {
+      "model_name": "MelBandRoformer_fp16.safetensors"
+    },
+    "class_type": "MelBandRoFormerModelLoader",
+    "_meta": {
+      "title": "Mel-Band RoFormer Model Loader"
+    }
+  },
+  "246": {
+    "inputs": {
+      "model_name": "ltx-2.3-22b-dev_transformer_only_fp8_scaled.safetensors",
+      "weight_dtype": "default",
+      "compute_dtype": "default",
+      "patch_cublaslinear": false,
+      "sage_attention": "auto",
+      "enable_fp16_accumulation": true
+    },
+    "class_type": "DiffusionModelLoaderKJ",
+    "_meta": {
+      "title": "Diffusion Model Loader KJ"
+    }
+  },
+  "247": {
+    "inputs": {
+      "lora_name": "ltx-2.3-22b-distilled-lora-384.safetensors",
+      "strength_model": 0.5,
+      "model": [
+        "246",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "249": {
+    "inputs": {
+      "scheduler": "sgm_uniform",
+      "steps": 8,
+      "denoise": 0.8,
+      "model": [
+        "233",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "BasicScheduler"
+    }
+  },
+  "251": {
+    "inputs": {
+      "cfg": 0.8,
+      "model": [
+        "233",
+        0
+      ],
+      "positive": [
+        "306",
+        0
+      ],
+      "negative": [
+        "306",
+        1
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFGGuider"
+    }
+  },
+  "252": {
+    "inputs": {
+      "noise": [
+        "315",
+        0
+      ],
+      "guider": [
+        "251",
+        0
+      ],
+      "sampler": [
+        "257",
+        0
+      ],
+      "sigmas": [
+        "254",
+        0
+      ],
+      "latent_image": [
+        "318",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
+  },
+  "253": {
+    "inputs": {
+      "start_step": 0,
+      "end_step": -1,
+      "sigmas": [
+        "254",
+        0
+      ]
+    },
+    "class_type": "VisualizeSigmasKJ",
+    "_meta": {
+      "title": "VisualizeSigmasKJ"
+    }
+  },
+  "254": {
+    "inputs": {
+      "boolean": true,
+      "on_true": [
+        "258",
+        0
+      ],
+      "on_false": [
+        "249",
+        0
+      ]
+    },
+    "class_type": "Switch any [Crystools]",
+    "_meta": {
+      "title": "是否使用官方调度"
+    }
+  },
+  "256": {
+    "inputs": {
+      "images": [
+        "253",
+        1
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "257": {
+    "inputs": {
+      "sampler_name": "euler_cfg_pp"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSamplerSelect"
+    }
+  },
+  "258": {
+    "inputs": {
+      "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.881203, 0.863321, 0.841251, 0.820089, 0.655, 0.381875, 0.0"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "ManualSigmas"
+    }
+  },
+  "279": {
+    "inputs": {
+      "text": "A mouse character singing naturally with perfect lip synchronization, \nsubtle head nods and tilts, hands moving rhythmically, emotionally dancing.\n\nMusic video cinematography.\n\nThe camera starts with a frontal shot slowly zooming in on the performer. \nThen the camera moves to the left side angle of the performer. \n\nSmooth cinematic camera movement, dynamic music video style, \ntracking the performer, dramatic close-up moments, \nhigh quality, natural lighting.",
+      "clip": [
+        "241",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "280": {
+    "inputs": {
+      "text": "low quality, still frame, freze, frames, watermark, overlay, titles, has blurbox, has subtitles",
+      "clip": [
+        "241",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "285": {
+    "inputs": {
+      "model": [
+        "245",
+        0
+      ],
+      "audio": [
+        "347",
+        0
+      ]
+    },
+    "class_type": "MelBandRoFormerSampler",
+    "_meta": {
+      "title": "Mel-Band RoFormer Sampler"
+    }
+  },
+  "287": {
+    "inputs": {
+      "audio": [
+        "285",
+        0
+      ],
+      "audio_vae": [
+        "343",
+        0
+      ]
+    },
+    "class_type": "LTXVAudioVAEEncode",
+    "_meta": {
+      "title": "LTXV Audio VAE Encode"
+    }
+  },
+  "289": {
+    "inputs": {
+      "samples": [
+        "287",
+        0
+      ],
+      "mask": [
+        "292",
+        0
+      ]
+    },
+    "class_type": "SetLatentNoiseMask",
+    "_meta": {
+      "title": "Set Latent Noise Mask"
+    }
+  },
+  "292": {
+    "inputs": {
+      "value": 0,
+      "width": [
+        "299",
+        1
+      ],
+      "height": [
+        "299",
+        2
+      ]
+    },
+    "class_type": "SolidMask",
+    "_meta": {
+      "title": "SolidMask"
+    }
+  },
+  "294": {
+    "inputs": {
+      "width": [
+        "299",
+        1
+      ],
+      "height": [
+        "299",
+        2
+      ],
+      "length": [
+        "349",
+        0
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLTXVLatentVideo",
+    "_meta": {
+      "title": "EmptyLTXVLatentVideo"
+    }
+  },
+  "295": {
+    "inputs": {
+      "strength": 1,
+      "bypass": false,
+      "vae": [
+        "242",
+        0
+      ],
+      "image": [
+        "297",
+        0
+      ],
+      "latent": [
+        "294",
+        0
+      ]
+    },
+    "class_type": "LTXVImgToVideoInplace",
+    "_meta": {
+      "title": "LTXVImgToVideoInplace"
+    }
+  },
+  "297": {
+    "inputs": {
+      "img_compression": 18,
+      "image": [
+        "299",
+        0
+      ]
+    },
+    "class_type": "LTXVPreprocess",
+    "_meta": {
+      "title": "LTXVPreprocess"
+    }
+  },
+  "299": {
+    "inputs": {
+      "width": 720,
+      "height": 1280,
+      "upscale_method": "nearest-exact",
+      "keep_proportion": "stretch",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "301",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "301": {
+    "inputs": {
+      "image": "20260310-140254.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "306": {
+    "inputs": {
+      "num_guides": "3",
+      "num_guides.frame_idx_1": 0,
+      "num_guides.strength_1": 1,
+      "num_guides.frame_idx_2": 1,
+      "num_guides.strength_2": 0,
+      "num_guides.frame_idx_3": 2,
+      "num_guides.strength_3": 0,
+      "positive": [
+        "308",
+        0
+      ],
+      "negative": [
+        "308",
+        1
+      ],
+      "vae": [
+        "242",
+        0
+      ],
+      "latent": [
+        "295",
+        0
+      ],
+      "num_guides.image_1": [
+        "301",
+        0
+      ],
+      "num_guides.image_2": [
+        "299",
+        0
+      ],
+      "num_guides.image_3": [
+        "299",
+        0
+      ]
+    },
+    "class_type": "LTXVAddGuideMulti",
+    "_meta": {
+      "title": "LTXVAddGuideMulti"
+    }
+  },
+  "308": {
+    "inputs": {
+      "frame_rate": 24,
+      "positive": [
+        "279",
+        0
+      ],
+      "negative": [
+        "280",
+        0
+      ]
+    },
+    "class_type": "LTXVConditioning",
+    "_meta": {
+      "title": "LTXVConditioning"
+    }
+  },
+  "315": {
+    "inputs": {
+      "noise_seed": 765974299776482
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "RandomNoise"
+    }
+  },
+  "318": {
+    "inputs": {
+      "video_latent": [
+        "306",
+        2
+      ],
+      "audio_latent": [
+        "289",
+        0
+      ]
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "_meta": {
+      "title": "LTXVConcatAVLatent"
+    }
+  },
+  "321": {
+    "inputs": {
+      "av_latent": [
+        "252",
+        0
+      ]
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "_meta": {
+      "title": "LTXVSeparateAVLatent"
+    }
+  },
+  "343": {
+    "inputs": {
+      "ckpt_name": "LTX23_audio_vae_bf16.safetensors"
+    },
+    "class_type": "LTXVAudioVAELoader",
+    "_meta": {
+      "title": "LTXV Audio VAE Loader"
+    }
+  },
+  "344": {
+    "inputs": {
+      "images": [
+        "299",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "347": {
+    "inputs": {
+      "audio": "trap_queen_16_36.mp3",
+      "start_time": 0,
+      "duration": 0
+    },
+    "class_type": "VHS_LoadAudioUpload",
+    "_meta": {
+      "title": "Load Audio (Upload)🎥🅥🅗🅢"
+    }
+  },
+  "348": {
+    "inputs": {
+      "expression": "24 * b",
+      "b": [
+        "347",
+        1
+      ]
+    },
+    "class_type": "MathExpression|pysssss",
+    "_meta": {
+      "title": "frame cnt"
+    }
+  },
+  "349": {
+    "inputs": {
+      "expression": "((ceil(a/8))*8)+1",
+      "a": [
+        "348",
+        0
+      ]
+    },
+    "class_type": "MathExpression|pysssss",
+    "_meta": {
+      "title": "8n+1"
+    }
+  },
+  "351": {
+    "inputs": {
+      "images": [
+        "299",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "353": {
+    "inputs": {
+      "samples": [
+        "321",
+        0
+      ],
+      "vae": [
+        "242",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "354": {
+    "inputs": {
+      "fps": 24,
+      "images": [
+        "353",
+        0
+      ],
+      "audio": [
+        "347",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "Create Video"
+    }
+  },
+  "357": {
+    "inputs": {
+      "filename_prefix": "Ltx23音频驱动",
+      "format": "mp4",
+      "codec": "h264",
+      "video": [
+        "359",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "Save Video"
+    }
+  },
+  "359": {
+    "inputs": {
+      "start_time": 0,
+      "duration": [
+        "347",
+        1
+      ],
+      "strict_duration": false,
+      "video": [
+        "354",
+        0
+      ]
+    },
+    "class_type": "Video Slice",
+    "_meta": {
+      "title": "Video Slice"
+    }
+  }
+}
