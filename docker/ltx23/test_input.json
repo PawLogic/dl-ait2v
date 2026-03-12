@@ -1,0 +1,9 @@
+{
+  "input": {
+    "image_url": "https://placehold.co/512x512.png",
+    "audio_url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+    "prompt_positive": "A person speaks naturally with perfect lip synchronization",
+    "prompt_negative": "low quality, blurry",
+    "seed": 42
+  }
+}

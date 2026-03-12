@@ -32,3 +32,13 @@ docker push nooka210/ltx23-worker:v1
 3. 创建后得到新的 Endpoint ID，用于测试
 
 线上 `42qdgmzjc9ldy5` 继续使用 v62 镜像，不受任何影响。
+
+## 手动下载模型（SKIP_AUTO_DOWNLOAD）
+
+创建 Pod/Endpoint 时设置环境变量 `SKIP_AUTO_DOWNLOAD=1`，脚本将跳过自动下载，直接使用 Volume 中已有模型。
+
+```
+SKIP_AUTO_DOWNLOAD=1
+```
+
+需提前将模型放到 Volume 的 `models/` 对应子目录，目录结构见 `start_wrapper.sh` 中的路径。

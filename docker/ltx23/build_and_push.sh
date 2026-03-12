@@ -57,6 +57,15 @@ if [ ! -f "$GCS_CREDS" ]; then
     exit 1
 fi
 
+# 检查 test_input.json（Dockerfile COPY 需要）
+TEST_INPUT="$DOCKER_DIR/ltx23/test_input.json"
+if [ ! -f "$TEST_INPUT" ]; then
+    echo "错误: 未找到 $TEST_INPUT"
+    echo "Build context: $DOCKER_DIR"
+    echo "请确保 ltx23/test_input.json 存在"
+    exit 1
+fi
+
 echo "=== LTX-2.3 构建（隔离模式）==="
 echo "镜像: ${IMAGE_NAME}:${TAG}"
 echo "Build context: $DOCKER_DIR"

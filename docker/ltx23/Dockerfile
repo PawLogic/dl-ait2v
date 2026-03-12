@@ -6,6 +6,11 @@ FROM runpod/worker-comfyui:5.7.1-base-cuda12.8.1
 WORKDIR /comfyui
 
 # -----------------------------------------------------------------------------
+# 0. Triton JIT 需要 C 编译器（FP8 dequantize 等运行时编译）
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------------------
 # 1. 更新 ComfyUI 到最新
 # -----------------------------------------------------------------------------
 RUN git fetch origin master && \
@@ -36,7 +41,7 @@ RUN cd /comfyui/custom_nodes && \
 # ComfyUI-MelBandRoFormer: MelBandRoFormerModelLoader, MelBandRoFormerSampler
 RUN cd /comfyui/custom_nodes && \
     rm -rf ComfyUI-MelBandRoFormer || true && \
-    git clone --depth 1 https://github.com/chflame163/ComfyUI-MelBandRoFormer.git && \
+    git clone --depth 1 https://github.com/kijai/ComfyUI-MelBandRoFormer.git && \
     cd ComfyUI-MelBandRoFormer && pip install -r requirements.txt || true
 
 # ComfyUI-Custom-Scripts: MathExpression|pysssss
@@ -52,35 +57,43 @@ RUN cd /comfyui/custom_nodes && \
     cd ComfyUI-Crystools && pip install -r requirements.txt || true
 
 # -----------------------------------------------------------------------------
-# 3. 安装额外 pip 依赖
+# 3. 升级 PyTorch 到 cu130，启用 comfy_kitchen CUDA 后端
+#    否则 cu128 下 cuda/triton 均 disabled，只用 eager → 30min vs 2min
 # -----------------------------------------------------------------------------
-RUN pip install librosa soundfile torchaudio demucs requests google-cloud-storage
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 
 # -----------------------------------------------------------------------------
-# 4. COPY workflow JSON（LTX-2.3 专用）
+# 4. 安装额外 pip 依赖
+# -----------------------------------------------------------------------------
+# sageattention: DiffusionModelLoaderKJ 的 sage_attention 需要
+RUN pip install librosa soundfile demucs requests google-cloud-storage sageattention
+
+# -----------------------------------------------------------------------------
+# 5. COPY workflow JSON（LTX-2.3 专用）
 # -----------------------------------------------------------------------------
 COPY workflow_ltx2-3_audio_gen.json /comfyui/workflows/ltx2-3_audio_gen.json
 
 # -----------------------------------------------------------------------------
-# 5. COPY handler 文件（复用 docker/pod_files）
+# 6. COPY handler 文件（ltx23 完全自包含，不依赖 pod_files）
 # -----------------------------------------------------------------------------
 RUN mkdir -p /workspace/handler
 
-COPY pod_files/rp_handler.py /workspace/handler/rp_handler.py
-COPY pod_files/url_downloader.py /workspace/handler/url_downloader.py
-COPY pod_files/workflow_builder.py /workspace/handler/workflow_builder.py
-COPY pod_files/gcs_uploader.py /workspace/handler/gcs_uploader.py
-
-COPY pod_files/rp_handler.py /handler.py
-COPY pod_files/url_downloader.py /url_downloader.py
-COPY pod_files/workflow_builder.py /workflow_builder.py
-COPY pod_files/gcs_uploader.py /gcs_uploader.py
+COPY ltx23/rp_handler.py /workspace/handler/rp_handler.py
+COPY ltx23/rp_handler.py /handler.py
+COPY ltx23/url_downloader.py /workspace/handler/url_downloader.py
+COPY ltx23/url_downloader.py /url_downloader.py
+COPY ltx23/gcs_uploader.py /workspace/handler/gcs_uploader.py
+COPY ltx23/gcs_uploader.py /gcs_uploader.py
 
 COPY ltx23/gcs-credentials.json /workspace/gcs-credentials.json
 COPY ltx23/gcs-credentials.json /gcs-credentials.json
 
+# test_input.json: RunPod Handler 在 Pod 模式下需要，否则 "test_input.json not found, exiting"
+COPY ltx23/test_input.json /test_input.json
+COPY ltx23/test_input.json /workspace/test_input.json
+
 # -----------------------------------------------------------------------------
-# 6. COPY start_wrapper.sh（LTX-2.3 模型下载逻辑）
+# 7. COPY start_wrapper.sh（LTX-2.3 模型下载逻辑）
 # -----------------------------------------------------------------------------
 RUN mv /start.sh /start.sh.original
 COPY ltx23/start_wrapper.sh /start.sh
