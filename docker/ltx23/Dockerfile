@@ -1,14 +1,14 @@
 # LTX-2.3 Audio Gen ComfyUI Worker for RunPod Serverless
 # 全新 Endpoint，不影响当前线上 LTX-2 环境
-# 构建: cd docker && docker build -f ltx23/Dockerfile -t your-registry/ltx23-worker:v1 .
+#
+# 构建（cu130，需 RunPod Min CUDA 13.0）:
+#   docker build --build-arg USE_CU130=1 -f ltx23/Dockerfile -t ltx23-worker:v1.5 .
+#
 FROM runpod/worker-comfyui:5.7.1-base-cuda12.8.1
 
-WORKDIR /comfyui
+ARG USE_CU130=1
 
-# -----------------------------------------------------------------------------
-# 0. Triton JIT 需要 C 编译器（FP8 dequantize 等运行时编译）
-# -----------------------------------------------------------------------------
-RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
+WORKDIR /comfyui
 
 # -----------------------------------------------------------------------------
 # 1. 更新 ComfyUI 到最新
@@ -57,16 +57,19 @@ RUN cd /comfyui/custom_nodes && \
     cd ComfyUI-Crystools && pip install -r requirements.txt || true
 
 # -----------------------------------------------------------------------------
-# 3. 升级 PyTorch 到 cu130，启用 comfy_kitchen CUDA 后端
-#    否则 cu128 下 cuda/triton 均 disabled，只用 eager → 30min vs 2min
+# 3. 升级 PyTorch cu130（启用 comfy_kitchen CUDA 后端，FP8 ~2min）
+#    需 RunPod Endpoint 设置 Min CUDA 13.0
 # -----------------------------------------------------------------------------
-RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+RUN if [ "$USE_CU130" = "1" ]; then \
+        echo "Upgrading to PyTorch cu130 for fast FP8..."; \
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130; \
+    fi
 
 # -----------------------------------------------------------------------------
 # 4. 安装额外 pip 依赖
 # -----------------------------------------------------------------------------
 # sageattention: DiffusionModelLoaderKJ 的 sage_attention 需要
-RUN pip install librosa soundfile demucs requests google-cloud-storage sageattention
+RUN pip install librosa soundfile torchaudio demucs requests google-cloud-storage sageattention
 
 # -----------------------------------------------------------------------------
 # 5. COPY workflow JSON（LTX-2.3 专用）

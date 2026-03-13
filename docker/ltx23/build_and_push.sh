@@ -5,17 +5,17 @@
 # =============================================================================
 #password
 # 隔离策略：
-#   1. 镜像名: nooka210/ltx23-worker:v1（与线上 ltx2-comfyui-worker:v62 不同）
-#   2. RunPod: 创建新 Endpoint 时指定此镜像，得到新的 Endpoint ID
+#   1. 镜像名: nooka210/ltx23-worker:v1.5（cu130，与线上 ltx2-comfyui-worker:v62 不同）
+#   2. RunPod: 创建新 Endpoint 时指定此镜像，GPU 选 Min CUDA 13.0
 #   3. Network Volume: 创建新 Volume，不与线上共用
 #
 # 线上环境（不动）：
 #   - Endpoint: 42qdgmzjc9ldy5
 #   - Image: nooka210/ltx2-comfyui-worker:v62
 #
-# LTX-2.3 新部署：
-#   - Endpoint: 新建
-#   - Image: nooka210/ltx23-worker:v1
+# LTX-2.3 新部署（cu130）：
+#   - Endpoint: 新建，GPU 选 Min CUDA 13.0
+#   - Image: nooka210/ltx23-worker:v1.5
 #
 # =============================================================================
 
@@ -40,7 +40,7 @@ if [ -z "$DOCKER_CMD" ]; then
 fi
 
 IMAGE_NAME="nooka210/ltx23-worker"
-TAG="v1"
+TAG="v1.5"
 
 # 脚本在 ltx23/ 下，需在 docker/ 目录执行 build（build context）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -72,8 +72,8 @@ echo "Build context: $DOCKER_DIR"
 echo "线上 ltx2-comfyui-worker:v62 不受影响"
 echo ""
 
-echo ">>> Building (linux/amd64)..."
-$DOCKER_CMD build --platform linux/amd64 -f ltx23/Dockerfile -t "${IMAGE_NAME}:${TAG}" .
+echo ">>> Building (linux/amd64, cu130)..."
+$DOCKER_CMD build --platform linux/amd64 --build-arg USE_CU130=1 -f ltx23/Dockerfile -t "${IMAGE_NAME}:${TAG}" .
 
 echo ""
 echo ">>> Pushing to DockerHub..."
@@ -81,5 +81,7 @@ $DOCKER_CMD push "${IMAGE_NAME}:${TAG}"
 
 echo ""
 echo "=== 完成 ==="
-echo "下一步：在 RunPod 创建新 Endpoint，Docker Image 填: ${IMAGE_NAME}:${TAG}"
-echo "注意：选择新建的 Network Volume，不要选线上在用的"
+echo "下一步：在 RunPod 创建新 Endpoint"
+echo "  - Docker Image: ${IMAGE_NAME}:${TAG}"
+echo "  - GPU: 选 Min CUDA 13.0（如 32GB PRO、48GB 等）"
+echo "  - Network Volume: 新建，不要选线上在用的"

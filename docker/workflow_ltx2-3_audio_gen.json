@@ -59,7 +59,7 @@
       "weight_dtype": "default",
       "compute_dtype": "default",
       "patch_cublaslinear": false,
-      "sage_attention": "auto",
+      "sage_attention": "disabled",
       "enable_fp16_accumulation": true
     },
     "class_type": "DiffusionModelLoaderKJ",

@@ -38,7 +38,7 @@ RUN cd /comfyui/custom_nodes && \
 # Install MelBandRoFormer (for vocal separation)
 RUN cd /comfyui/custom_nodes && \
     (rm -rf ComfyUI-MelBandRoFormer || true) && \
-    git clone --depth 1 https://github.com/chflame163/ComfyUI-MelBandRoFormer.git && \
+    git clone --depth 1 https://github.com/kijai/ComfyUI-MelBandRoFormer.git && \
     cd ComfyUI-MelBandRoFormer && \
     pip install -r requirements.txt || true
 
