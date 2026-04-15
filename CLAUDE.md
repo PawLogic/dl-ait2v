@@ -14,47 +14,66 @@ Uses LTX-2 19B model with LoRA optimizations.
 
 **Current Version**: v62 (zero-strength LoRA optimization)
 
-## Architecture
+## Architecture (Volume-Centric Serverless)
+
+两套部署方式并存：
+
+- **docker/** — 旧 Docker-embedded 方式（Dockerfile 打包所有逻辑）
+- **launchpad/** — 新 Volume-Centric 方式（镜像只是运行环境，Volume 是交付物）
+
+### Volume-Centric 架构（当前主力）
 
 ```
-Mode 1: User Request (image_url, audio_url, prompt)
-Mode 2: User Request (image_url, duration, prompt)
-Mode 3a: User Request (keyframes[], audio_url, prompt)
-Mode 3b: User Request (keyframes[], duration, prompt)
-    ↓
-RunPod Serverless API (endpoint: 42qdgmzjc9ldy5)
-    ↓
-GPU Workers (RTX 4090/5090, 24GB+ VRAM)
-    ├─ ComfyUI Framework
-    ├─ LTX-2 19B Model (FP8)
-    ├─ LoRA Models (distilled, detailer, camera, i2v-adapter)
-    └─ KJNodes (Chained LTXVAddGuide for Mode 3)
-    ↓
-GCS Upload (dramaland-public bucket)
-    ↓
-Return video_url
+请求 → RunPod Serverless Endpoint (dramaland-ai)
+       → Worker 启动: runpod/comfyui:cuda13.0 镜像
+       → boot.sh: symlink Volume → /workspace/
+       → /start.sh: 启动 ComfyUI (用 Volume 上的 .venv-cu128)
+       → ComfyUI-ServerlessHandler: 启动 RunPod handler 线程
+       → handler 收到请求 → 加载 workflow → 下载媒体
+       → 提交 ComfyUI /prompt → 等待生成 → 上传 GCS → 返回 URL
 ```
+
+关键特性：
+- **Workflow 解耦** — handler 不绑定任何 workflow，自动扫描 /workflows/ 目录
+- **UI 格式自动转换** — ComfyUI Save 的 UI 格式自动转成 API 格式
+- **多 Volume 多 DC** — 同一个 Template 绑定不同 DC 的 Volume
+
+### 当前部署状态
+
+| 资源 | ID | 说明 |
+|---|---|---|
+| Endpoint | bm9lmit6l51900 | dramaland-ai，公司级 AI 中控 |
+| Template | 0pmqlgeh7l | dramaland-serverless-boot |
+| 基线 Volume | koihtblqmz | eu-ro-1 (EU-RO-1) |
+| 基线 Pod | cx5lmple44ckep | 开发用，SSH: root@213.173.103.164:21595 |
 
 ## File Structure
 
 ```
-LTX/
+dl-ait2v/
 ├── CLAUDE.md
-├── docker/
-│   ├── Dockerfile                    # Worker container (v51)
-│   ├── workflow_ltx2_enhanced.json   # Mode 1: Lip-sync workflow
-│   ├── workflow_ltx2_audio_gen.json  # Mode 2: Audio generation workflow
-│   ├── workflow_ltx2_multiframe.json # Mode 3: Multi-keyframe workflow
-│   ├── API.md                        # API documentation
-│   └── pod_files/
-│       ├── rp_handler.py             # RunPod handler (unified routing)
-│       ├── url_downloader.py         # URL downloader
-│       ├── workflow_builder.py       # Workflow builder (both modes)
-│       ├── gcs_uploader.py           # GCS upload
-│       ├── start_wrapper.sh          # Startup script
-│       └── gcs-credentials.json      # GCS credentials
-├── scripts/                          # Utility scripts
-└── test/                             # Test files
+├── docker/                              # 旧 Docker-embedded 方式
+│   ├── Dockerfile
+│   ├── pod_files/                       # 旧 handler（参考用）
+│   └── ...
+├── launchpad/                           # Volume-Centric Serverless
+│   ├── LAUNCHPAD.md                     # 部署文档
+│   ├── serverless/                      # 部署到 Volume 的文件
+│   │   ├── boot.sh                      #   Serverless 启动引导
+│   │   ├── ComfyUI-ServerlessHandler/   #   ComfyUI custom node (handler 启动钩子)
+│   │   ├── rp_handler.py                #   通用 workflow runner
+│   │   ├── workflow_converter.py        #   UI→API 格式转换
+│   │   ├── media_downloader.py          #   媒体下载
+│   │   ├── gcs_uploader.py              #   GCS 上传
+│   │   └── init.sh                      #   Pod 开发模式启动脚本
+│   ├── volume/                          # Volume 管理脚本
+│   │   ├── sync_volume.sh               #   同步代码到其他 Volume
+│   │   ├── download_models.sh           #   模型下载/校验
+│   │   └── setup_venv.sh                #   venv 环境搭建
+│   └── test/
+│       └── test_serverless.sh           #   端到端测试
+├── scripts/
+└── test/
 ```
 
 ## Key Commands
