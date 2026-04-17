@@ -103,3 +103,108 @@ launchpad/
 - Endpoint: `dramaland-ai` (ID: bm9lmit6l51900)
 - Template: `dramaland-serverless-boot` (ID: 0pmqlgeh7l)
 - GPU: RTX 5090 / CUDA 13.0
+
+---
+
+## 运行时实测结构（2026-04-17，SSH 基线 Pod 验证）
+
+### Volume 布局
+
+```
+/runpod-volume/
+├── boot.sh                     # serverless 真入口
+├── init.sh                     # 遗留，已不走主路径
+├── gcs-credentials.json        # GCS 上传
+├── runpod-slim/
+│   ├── comfyui_args.txt
+│   ├── filebrowser.db
+│   └── ComfyUI/
+│       ├── main.py
+│       ├── .venv-cu128/        # 主 venv（py3.12, --system-site-packages）
+│       ├── models/             # ~46 GB
+│       │   ├── diffusion_models/   23G  (LTX-2)
+│       │   ├── text_encoders/      15G
+│       │   ├── loras/              7.1G
+│       │   └── vae/                1.4G
+│       └── custom_nodes/
+│           ├── ComfyUI-ServerlessHandler/  ← 把 handler 寄生进 ComfyUI 进程
+│           ├── ComfyUI-LTXVideo
+│           ├── ComfyUI-KJNodes
+│           ├── ComfyUI-VideoHelperSuite
+│           ├── ComfyUI-MelBandRoFormer
+│           ├── ComfyUI-RunpodDirect
+│           ├── ComfyUI-Crystools
+│           ├── ComfyUI-Custom-Scripts
+│           ├── ComfyUI-Manager
+│           └── Civicomfy
+├── handler/
+│   ├── rp_handler.py           # 563 行，主 handler
+│   ├── workflow_converter.py   # 263 行，UI→API 自动转
+│   ├── media_downloader.py
+│   └── gcs_uploader.py
+├── workflows/
+│   ├── workflow_ltx23_multiframe_v1.json
+│   ├── workflow_ltx23_audio_multiframe_v2.json
+│   └── workflow_ltx23_audio_multiframe_v2_meta.json   # 可选子图开关元数据
+└── venv-cu130/                 # 旧 init.sh 路径的独立 venv，serverless 不用
+```
+
+### 启动链（serverless 冷启动）
+
+1. Template entrypoint → `bash /runpod-volume/boot.sh`
+2. **boot.sh**（volume 上）：等 volume → 把 `/runpod-volume/{runpod-slim, handler, workflows, gcs-credentials.json}` symlink 进 `/workspace/` → `exec /start.sh`
+3. **/start.sh**（镜像烘焙）：起 sshd、jupyter、filebrowser → 激活 `.venv-cu128` → `python main.py --listen 0.0.0.0 --port 8188`
+4. ComfyUI 启动时扫 `custom_nodes/`
+5. **ComfyUI-ServerlessHandler/\_\_init\_\_.py** 被 import：检测 `RUNPOD_POD_ID` → 开 **daemon thread** → `from rp_handler import handler` → **monkey-patch `signal.signal` 为 no-op**（解决 signal 不能在非主线程注册）→ `runpod.serverless.start({"handler": handler})`
+
+主线程跑 ComfyUI（占 8188），从线程跑 RunPod handler；handler 内部走 localhost HTTP 调 ComfyUI。
+
+### 脚本配合关系
+
+| 脚本 | 住哪 | 职责 |
+|---|---|---|
+| `boot.sh` | Volume | 把 volume 三个目录 symlink 到 `/workspace/`，抹平镜像 hardcode |
+| `/start.sh` | 镜像 | 起辅助服务 + venv + ComfyUI 主进程 |
+| `ComfyUI-ServerlessHandler/__init__.py` | Volume（custom_node） | 在 ComfyUI 进程内起 daemon thread 跑 handler |
+| `rp_handler.py` | Volume | 接 RunPod job → 转换/活化 workflow → 调 ComfyUI → 收 output → 上 GCS |
+| `init.sh` | Volume | 老路径（独立 venv 启 ComfyUI+handler），现已不用 |
+
+### Workflow 自动转化（UI → API）
+
+`rp_handler.load_workflow()` 流程：
+
+1. 读 `/workspace/workflows/<name>.json`
+2. `workflow_converter.is_ui_format()` 判定：有 `nodes[]` + `links[]` 就是 UI 格式（ComfyUI web 端 "Save" 导出的）
+3. UI 格式 → `convert_ui_to_api()`：
+   - 拉 ComfyUI `/object_info` 解析 widget 名
+   - 处理 KJNodes `SetNode`/`GetNode`（命名变量 pass-through）
+   - 内联 `PrimitiveNode` 常量
+   - 跳过 `Reroute`/`Note`、muted 节点（mode=2/4）
+   - 支持 `COMFY_DYNAMICCOMBO_V3` 动态输入（LTXVAddGuideMulti）
+   - `fix_dangling_refs`：Switch 的 `on_true` 断掉时退化到 `on_false`
+4. 可选同名 `<name>_meta.json` 描述 `frame_chains` + `audio_chain`：
+   - 按请求 `images[]` 长度 un-mute 对应 frame 子图
+   - 按是否有 `audio_url` un-mute audio 链路
+   - `apply_switch_booleans` 翻 Switch 的 boolean 字段（`boolean` 或 `value`）
+
+请求形态：
+
+```json
+{
+  "input": {
+    "workflow": "workflow_ltx23_audio_multiframe_v2",
+    "image_url": "...",
+    "audio_url": "...",
+    "images": ["url1", "url2"],
+    "overrides": {"315": {"noise_seed": 42}, "299": {"width": 1280}}
+  }
+}
+```
+
+Handler 用 `INPUT_NODE_MAP`（`LoadImage` / `VHS_LoadAudioUpload` / `LoadAudio` / `VHS_LoadVideo`）按 node ID 升序自动对槽，`overrides` 可按 node_id 覆盖任意字段。
+
+### 注意点
+
+- `init.sh` 和 `venv-cu130/` 是老路径遗留，serverless 主路径完全不走，可考虑清理避免混淆
+- `.venv-cu128` 命名是历史包袱，实际 PyTorch 是 cu130（吃镜像 system-site-packages）
+- Volume 同时存 code + 46 GB models，跨 DC 复制是纯 rsync 工作
