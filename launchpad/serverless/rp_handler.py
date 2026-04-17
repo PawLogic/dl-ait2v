@@ -101,6 +101,110 @@ def load_workflow(name):
     return data
 
 
+def load_workflow_raw(name):
+    """Load workflow JSON without converting. Returns (data, is_ui_format)."""
+    from workflow_converter import is_ui_format
+    path = os.path.join(WORKFLOW_DIR, name if name.endswith(".json") else f"{name}.json")
+    if not os.path.exists(path):
+        available = list_workflows()
+        raise FileNotFoundError(
+            f"Workflow '{name}' not found. Available: {available}"
+        )
+    with open(path) as f:
+        data = json.load(f)
+    return data, is_ui_format(data)
+
+
+def load_workflow_meta(name):
+    """Load optional companion metadata file for a workflow."""
+    base = name if not name.endswith(".json") else name[:-5]
+    path = os.path.join(WORKFLOW_DIR, f"{base}_meta.json")
+    if os.path.exists(path):
+        with open(path) as f:
+            meta = json.load(f)
+        print(f"Loaded metadata: {path}")
+        return meta
+    return None
+
+
+def activate_optional_chains(ui_workflow, meta, num_optional_images, has_audio):
+    """
+    Un-mute optional node chains in UI-format workflow based on provided inputs.
+    Modifies ui_workflow in place.
+    """
+    nodes_by_id = {n["id"]: n for n in ui_workflow.get("nodes", [])}
+
+    # Activate frame chains based on how many optional images are provided
+    for chain in meta.get("frame_chains", []):
+        # frame_index 2 = images[0], frame_index 3 = images[1], etc.
+        arr_idx = chain["frame_index"] - 2
+        if arr_idx < num_optional_images:
+            for nid in chain["chain_nodes"]:
+                if nid in nodes_by_id:
+                    nodes_by_id[nid]["mode"] = 0
+            print(f"  Activated frame {chain['frame_index']} chain (nodes {chain['chain_nodes']})")
+
+    # Activate audio chain if audio is provided
+    if has_audio:
+        audio_chain = meta.get("audio_chain", {})
+        for nid in audio_chain.get("chain_nodes", []):
+            if nid in nodes_by_id:
+                nodes_by_id[nid]["mode"] = 0
+        print(f"  Activated audio chain (nodes {audio_chain.get('chain_nodes', [])})")
+
+
+def fix_dangling_refs(workflow):
+    """
+    After UI→API conversion, fix inputs that reference absent (muted) nodes.
+    For Switch nodes: redirect dangling on_true to on_false as safe fallback.
+    For other nodes: remove the dangling key.
+    """
+    node_ids = set(workflow.keys())
+    for node_id, node in workflow.items():
+        inputs = node.get("inputs", {})
+        for key, val in list(inputs.items()):
+            if not (isinstance(val, list) and len(val) == 2 and isinstance(val[0], str)):
+                continue
+            if val[0] in node_ids:
+                continue
+            # Dangling reference found
+            if "Switch" in node.get("class_type", "") and key == "on_true":
+                on_false = inputs.get("on_false")
+                if on_false is not None:
+                    inputs["on_true"] = on_false
+                    print(f"  Fixed dangling on_true in node {node_id} → on_false")
+                    continue
+            del inputs[key]
+            print(f"  Removed dangling ref: node {node_id}.{key} → {val}")
+
+
+def apply_switch_booleans(api_workflow, meta, num_optional_images, has_audio):
+    """
+    Set Switch node booleans in API-format workflow based on provided inputs.
+    Modifies api_workflow in place.
+    """
+    # Enable frame switches
+    for chain in meta.get("frame_chains", []):
+        arr_idx = chain["frame_index"] - 2
+        if arr_idx < num_optional_images:
+            switch_id = str(chain["switch_node"])
+            if switch_id in api_workflow:
+                api_workflow[switch_id]["inputs"]["boolean"] = True
+                print(f"  Enabled switch {switch_id} (frame {chain['frame_index']})")
+
+    # Enable audio switches
+    if has_audio:
+        audio_chain = meta.get("audio_chain", {})
+        for key in ("switch_node", "duration_node"):
+            nid = str(audio_chain.get(key, ""))
+            if nid and nid in api_workflow:
+                ct = api_workflow[nid].get("class_type", "")
+                # PrimitiveBoolean stores its value in "value"; Switch nodes use "boolean"
+                field = "value" if ct == "PrimitiveBoolean" else "boolean"
+                api_workflow[nid]["inputs"][field] = True
+                print(f"  Enabled audio switch {nid} ({key})")
+
+
 def find_input_nodes(workflow):
     """
     Find all media input nodes in workflow, grouped by media type.
@@ -164,7 +268,7 @@ def submit_workflow(workflow):
     return prompt_id
 
 
-def wait_for_completion(prompt_id, timeout=1080):
+def wait_for_completion(prompt_id, timeout=1800):
     """
     Poll ComfyUI /history until workflow completes.
     Returns outputs dict: {node_id: {"gifs": [...], "images": [...], ...}}
@@ -185,6 +289,11 @@ def wait_for_completion(prompt_id, timeout=1080):
                     elapsed = time.time() - start
                     print(f"Completed in {elapsed:.1f}s")
                     return outputs
+                # SaveVideo produces no history outputs — detect completion by status
+                if status.get("completed") and status.get("status_str") == "success":
+                    elapsed = time.time() - start
+                    print(f"Completed in {elapsed:.1f}s (no history outputs, will scan disk)")
+                    return outputs
         except requests.RequestException as e:
             print(f"  Poll error: {e}")
         time.sleep(3)
@@ -204,10 +313,12 @@ def _has_output_files(outputs):
 
 # ─── Output Collection ──────────────────────────────────────────
 
-def collect_output_files(outputs):
+def collect_output_files(outputs, job_start_time=None):
     """
     Collect all output files from ComfyUI history outputs.
     Returns: [{"path": str, "filename": str, "type": str}, ...]
+
+    Falls back to disk scan for SaveVideo (which writes files but reports no history outputs).
     """
     files = []
     for node_id, out in outputs.items():
@@ -244,6 +355,21 @@ def collect_output_files(outputs):
                     "filename": item["filename"],
                     "type": "audio",
                 })
+
+    # SaveVideo writes mp4 to disk but doesn't appear in history outputs.
+    # Fall back to scanning for recently-created mp4 files.
+    if not files and job_start_time is not None:
+        cutoff = job_start_time - 5  # 5s buffer for clock skew
+        output_dir = COMFYUI_OUTPUT_DIR
+        if os.path.isdir(output_dir):
+            for fname in os.listdir(output_dir):
+                ext = os.path.splitext(fname)[1].lower()
+                if ext not in (".mp4", ".webm", ".avi", ".mov"):
+                    continue
+                fpath = os.path.join(output_dir, fname)
+                if os.path.getmtime(fpath) >= cutoff:
+                    print(f"  Disk scan found: {fname}")
+                    files.append({"path": fpath, "filename": fname, "type": "video"})
 
     return files
 
@@ -283,6 +409,12 @@ def collect_file_inputs(input_data):
         for url in input_data.get(array_key, []):
             inputs.append((url, mtype))
 
+    # 3a. keyframes array: extract image URLs in order (used by multiframe workflows)
+    for kf in input_data.get("keyframes", []):
+        url = kf.get("image_url") if isinstance(kf, dict) else None
+        if url:
+            inputs.append((url, "image"))
+
     # 3. Numbered keys: image_url_2, image_url_3, ...
     for i in range(2, 10):
         for key, mtype in REQUEST_FILE_KEYS.items():
@@ -317,7 +449,31 @@ def handler(event):
                 "available_workflows": list_workflows(),
             }
 
-        workflow = load_workflow(workflow_name)
+        keyframes = input_data.get("keyframes", [])
+        if keyframes:
+            # keyframes[0] = first (mandatory), keyframes[-1] = last (mandatory if len>1)
+            # keyframes[2..] = optional middle frames
+            num_optional_images = max(0, len(keyframes) - 2)
+        else:
+            num_optional_images = len(input_data.get("images", []))
+        has_audio = bool(input_data.get("audio_url"))
+
+        # Load raw (UI or API) so we can activate optional chains before conversion
+        workflow_raw, is_ui = load_workflow_raw(workflow_name)
+        meta = load_workflow_meta(workflow_name)
+
+        if meta and is_ui:
+            activate_optional_chains(workflow_raw, meta, num_optional_images, has_audio)
+
+        # Convert UI → API format (skips muted nodes)
+        from workflow_converter import is_ui_format, convert_ui_to_api
+        if is_ui:
+            print(f"Converting UI-format workflow to API format...")
+            workflow = convert_ui_to_api(workflow_raw, COMFYUI_URL)
+            fix_dangling_refs(workflow)
+        else:
+            workflow = workflow_raw
+
         print(f"Loaded: {workflow_name} ({len(workflow)} nodes)")
 
         # ── 2. Find input nodes ──
@@ -348,6 +504,10 @@ def handler(event):
             else:
                 print(f"  Warning: override target node {node_id} not in workflow")
 
+        # ── 4b. Auto-set switch booleans from metadata ──
+        if meta:
+            apply_switch_booleans(workflow, meta, num_optional_images, has_audio)
+
         # ── 5. Submit ──
         prompt_id = submit_workflow(workflow)
 
@@ -355,7 +515,7 @@ def handler(event):
         outputs = wait_for_completion(prompt_id)
 
         # ── 7. Collect and upload outputs ──
-        output_files = collect_output_files(outputs)
+        output_files = collect_output_files(outputs, job_start_time=start_time)
         if not output_files:
             return {"status": "error", "error": "No output files produced"}
 

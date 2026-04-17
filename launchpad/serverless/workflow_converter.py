@@ -22,6 +22,43 @@ def is_ui_format(workflow):
     )
 
 
+def _resolve_set_get_nodes(nodes, link_map):
+    """
+    Build resolution maps for KJNodes SetNode/GetNode (frontend-only patterns).
+
+    SetNode: stores a named value AND passes it through (transparent pass-through).
+    GetNode: retrieves a named value by name.
+
+    Returns:
+      set_map:      {name: (src_node_id_str, src_slot)}   — active SetNodes by name
+      set_node_map: {set_node_id_str: (src_id_str, slot)} — active SetNodes by node ID
+      get_map:      {get_node_id_str: name}               — all GetNodes
+    """
+    set_map = {}
+    set_node_map = {}
+    get_map = {}
+    for node in nodes:
+        ct = node.get("type", "")
+        widgets = node.get("widgets_values", [])
+        if ct == "SetNode":
+            if node.get("mode", 0) in (2, 4):
+                continue  # muted SetNode → unavailable
+            name = widgets[0] if widgets else None
+            for inp in node.get("inputs", []):
+                lid = inp.get("link")
+                if lid is not None and lid in link_map:
+                    src_id, src_slot = link_map[lid]
+                    entry = (str(src_id), src_slot)
+                    if name:
+                        set_map[name] = entry
+                    set_node_map[str(node["id"])] = entry
+                    break
+        elif ct == "GetNode":
+            if widgets:
+                get_map[str(node["id"])] = widgets[0]
+    return set_map, set_node_map, get_map
+
+
 def convert_ui_to_api(ui_workflow, comfyui_url="http://127.0.0.1:8188"):
     """Convert UI-format workflow to API format for /prompt submission."""
     object_info = _get_object_info(comfyui_url)
@@ -33,13 +70,27 @@ def convert_ui_to_api(ui_workflow, comfyui_url="http://127.0.0.1:8188"):
     for link in links:
         link_map[link[0]] = (link[1], link[2])
 
+    # Resolve SetNode/GetNode: transparent pass-through and named variable patterns
+    set_map, set_node_map, get_map = _resolve_set_get_nodes(nodes, link_map)
+    if set_map:
+        print(f"  SetNode/GetNode resolved: {list(set_map.keys())}")
+
+    # Resolve PrimitiveNode: built-in constant nodes whose value should be inlined
+    primitive_map = {}  # node_id_str → value
+    for node in nodes:
+        if node.get("type") == "PrimitiveNode" and node.get("mode", 0) not in (2, 4):
+            widgets = node.get("widgets_values", [])
+            if widgets:
+                primitive_map[str(node["id"])] = widgets[0]
+
     api = {}
     for node in nodes:
         if node.get("mode", 0) in (2, 4):
             continue
 
         class_type = node.get("type", "")
-        if class_type in ("Reroute", "Note", "PrimitiveNode"):
+        # SetNode/GetNode are frontend-only; skip them (their values are inlined below)
+        if class_type in ("Reroute", "Note", "PrimitiveNode", "SetNode", "GetNode"):
             continue
 
         node_id = str(node["id"])
@@ -52,7 +103,26 @@ def convert_ui_to_api(ui_workflow, comfyui_url="http://127.0.0.1:8188"):
             link_id = inp_slot.get("link")
             if link_id is not None and link_id in link_map:
                 src_id, src_slot = link_map[link_id]
-                inputs[name] = [str(src_id), src_slot]
+                src_id_str = str(src_id)
+                # Resolve PrimitiveNode → inline constant value
+                if src_id_str in primitive_map:
+                    inputs[name] = primitive_map[src_id_str]
+                    connected_names.add(name)
+                    continue
+                # Resolve GetNode → SetNode source (named variable pattern)
+                elif src_id_str in get_map:
+                    get_name = get_map[src_id_str]
+                    if get_name in set_map:
+                        src_id_str, src_slot = set_map[get_name]
+                    # else: SetNode muted/missing → dangling ref, fix_dangling_refs handles it
+                # Resolve direct SetNode reference → SetNode's source (pass-through)
+                elif src_id_str in set_node_map:
+                    src_id_str, src_slot = set_node_map[src_id_str]
+                # After chain resolution, check again if resolved source is PrimitiveNode
+                if src_id_str in primitive_map:
+                    inputs[name] = primitive_map[src_id_str]
+                else:
+                    inputs[name] = [src_id_str, src_slot]
                 connected_names.add(name)
 
         # ── 2. Widget values → named inputs ──
@@ -86,8 +156,17 @@ def _map_widgets(node_info, widget_values, connected_names):
     - Regular widget types (INT, FLOAT, STRING, BOOLEAN, combo list)
     - COMFY_DYNAMICCOMBO_V3 with dynamic sub-input expansion
     - control_after_generate companion widgets (skip)
+    - dict-style widgets_values (some VHS nodes store {name: value} directly)
     """
     result = {}
+
+    # VHS and some custom nodes use dict-style widgets_values: {input_name: value}
+    if isinstance(widget_values, dict):
+        for name, value in widget_values.items():
+            if name not in connected_names and isinstance(value, (str, int, float, bool)):
+                result[name] = value
+        return result
+
     wi = 0  # widget_values index
 
     input_defs = node_info.get("input", {})
@@ -99,9 +178,13 @@ def _map_widgets(node_info, widget_values, connected_names):
         for name, spec in cat.items():
             if wi >= len(widget_values):
                 break
-            if name in connected_names:
-                continue
             if not isinstance(spec, (list, tuple)) or len(spec) == 0:
+                continue
+            if name in connected_names:
+                # Advance wi if this input also has a widget value slot
+                if _is_widget_type(spec):
+                    wi += 1
+                    wi = _skip_control_widget(widget_values, wi)
                 continue
 
             type_info = spec[0]

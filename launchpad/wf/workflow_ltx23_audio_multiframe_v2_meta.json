@@ -1,0 +1,33 @@
+{
+  "frame_chains": [
+    {
+      "frame_index": 2,
+      "load_node": 396,
+      "chain_nodes": [396, 397, 398, 399],
+      "switch_node": 433
+    },
+    {
+      "frame_index": 3,
+      "load_node": 401,
+      "chain_nodes": [401, 402, 403, 404],
+      "switch_node": 435
+    },
+    {
+      "frame_index": 4,
+      "load_node": 406,
+      "chain_nodes": [406, 408, 411, 412],
+      "switch_node": 437
+    },
+    {
+      "frame_index": 5,
+      "load_node": 407,
+      "chain_nodes": [407, 409, 413, 414],
+      "switch_node": 439
+    }
+  ],
+  "audio_chain": {
+    "chain_nodes": [391, 373, 285, 287, 292, 289, 318],
+    "switch_node": 440,
+    "duration_node": 430
+  }
+}
