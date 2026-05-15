@@ -32,12 +32,15 @@ Response format:
     }
 }
 """
-import runpod
-import requests
+import io
 import json
 import os
 import sys
 import time
+
+import runpod
+import requests
+from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -66,6 +69,37 @@ REQUEST_FILE_KEYS = {
     "audio_url": "audio",
     "video_url": "video",
 }
+
+DEFAULT_CANVAS_RESOLUTION = "720p"
+DEFAULT_CANVAS_ASPECT_RATIO = "16:9"
+
+CANVAS_DIMENSIONS = {
+    "480p": {
+        "16:9": (864, 480),
+        "9:16": (480, 864),
+        "1:1": (640, 640),
+    },
+    "720p": {
+        "16:9": (1280, 736),
+        "9:16": (736, 1280),
+        "1:1": (736, 736),
+    },
+    "1080p": {
+        "16:9": (1920, 1088),
+        "9:16": (1088, 1920),
+        "1:1": (1088, 1088),
+    },
+}
+
+CANVAS_NODE_IDS = (
+    "292",  # SolidMask for audio latent mask
+    "294",  # EmptyLTXVLatentVideo
+    "299",  # Frame 1 resize
+    "397",  # Frame 2 resize
+    "402",  # Frame 3 resize
+    "408",  # Frame 4 resize
+    "409",  # Frame 5 resize
+)
 
 
 # ─── Workflow Discovery & Analysis ───────────────────────────────
@@ -203,6 +237,119 @@ def apply_switch_booleans(api_workflow, meta, num_optional_images, has_audio):
                 field = "value" if ct == "PrimitiveBoolean" else "boolean"
                 api_workflow[nid]["inputs"][field] = True
                 print(f"  Enabled audio switch {nid} ({key})")
+
+
+def count_optional_images(input_data):
+    """Return how many optional image chains should be active."""
+    keyframes = input_data.get("keyframes", [])
+    if isinstance(keyframes, list) and keyframes:
+        return max(0, len(keyframes) - 1)
+    images = input_data.get("images", [])
+    if isinstance(images, list):
+        return len(images)
+    return 0
+
+
+def nearest_supported_aspect_ratio(width, height):
+    """Map a source image size to the closest supported output ratio."""
+    if width <= 0 or height <= 0:
+        return DEFAULT_CANVAS_ASPECT_RATIO
+    source_ratio = width / height
+    candidates = {
+        "16:9": 16 / 9,
+        "9:16": 9 / 16,
+        "1:1": 1.0,
+    }
+    return min(candidates, key=lambda ratio: abs(candidates[ratio] - source_ratio))
+
+
+def normalize_canvas_resolution(value):
+    if value is None:
+        return DEFAULT_CANVAS_RESOLUTION
+    resolution = str(value).strip().lower()
+    if resolution in CANVAS_DIMENSIONS:
+        return resolution
+    return DEFAULT_CANVAS_RESOLUTION
+
+
+def normalize_canvas_aspect_ratio(value):
+    if value is None:
+        return DEFAULT_CANVAS_ASPECT_RATIO
+    aspect_ratio = str(value).strip()
+    if aspect_ratio in CANVAS_DIMENSIONS[DEFAULT_CANVAS_RESOLUTION]:
+        return aspect_ratio
+    return DEFAULT_CANVAS_ASPECT_RATIO
+
+
+def coerce_positive_int(value, field_name):
+    try:
+        result = int(value)
+    except Exception:
+        raise ValueError(f"{field_name} must be a positive integer: {value!r}")
+    if result <= 0:
+        raise ValueError(f"{field_name} must be a positive integer: {value!r}")
+    return result
+
+
+def probe_image_size(file_bytes):
+    """Return (width, height) for an image, or None if probing fails."""
+    try:
+        with Image.open(io.BytesIO(file_bytes)) as image:
+            return image.size
+    except Exception as exc:
+        print(f"  Warning: failed to inspect image size: {exc}")
+        return None
+
+
+def resolve_canvas_dimensions(input_data, first_image_size=None):
+    """
+    Resolve output canvas from explicit width/height, requested aspect ratio,
+    or the first input image size. Returns (width, height, aspect, resolution)
+    or None when the request/workflow does not imply canvas control.
+    """
+    has_width = input_data.get("width") is not None
+    has_height = input_data.get("height") is not None
+    if has_width or has_height:
+        if not (has_width and has_height):
+            raise ValueError("width and height must be provided together")
+        width = coerce_positive_int(input_data["width"], "width")
+        height = coerce_positive_int(input_data["height"], "height")
+        return width, height, f"{width}:{height}", "custom"
+
+    resolution = normalize_canvas_resolution(input_data.get("resolution"))
+    requested_ratio = (
+        input_data.get("aspect_ratio")
+        or input_data.get("aspectRatio")
+    )
+    if requested_ratio:
+        aspect_ratio = normalize_canvas_aspect_ratio(requested_ratio)
+    elif first_image_size:
+        aspect_ratio = nearest_supported_aspect_ratio(*first_image_size)
+    else:
+        return None
+
+    width, height = CANVAS_DIMENSIONS[resolution][aspect_ratio]
+    return width, height, aspect_ratio, resolution
+
+
+def apply_canvas_dimensions(workflow, width, height):
+    """Patch converted API workflow nodes that consume the output canvas size."""
+    updated = []
+    for node_id in CANVAS_NODE_IDS:
+        node = workflow.get(node_id)
+        if not node:
+            continue
+        inputs = node.setdefault("inputs", {})
+        changed = False
+        if "width" in inputs:
+            inputs["width"] = width
+            changed = True
+        if "height" in inputs:
+            inputs["height"] = height
+            changed = True
+        if changed:
+            updated.append(node_id)
+    return updated
 
 
 def find_input_nodes(workflow):
@@ -449,13 +596,7 @@ def handler(event):
                 "available_workflows": list_workflows(),
             }
 
-        keyframes = input_data.get("keyframes", [])
-        if keyframes:
-            # keyframes[0] = first (mandatory), keyframes[-1] = last (mandatory if len>1)
-            # keyframes[2..] = optional middle frames
-            num_optional_images = max(0, len(keyframes) - 2)
-        else:
-            num_optional_images = len(input_data.get("images", []))
+        num_optional_images = count_optional_images(input_data)
         has_audio = bool(input_data.get("audio_url"))
 
         # Load raw (UI or API) so we can activate optional chains before conversion
@@ -482,6 +623,7 @@ def handler(event):
 
         # ── 3. Download, upload, and inject file inputs ──
         file_inputs = collect_file_inputs(input_data)
+        first_image_size = None
         for url, mtype in file_inputs:
             targets = input_nodes.get(mtype, [])
             if not targets:
@@ -489,13 +631,29 @@ def handler(event):
                 continue
 
             file_bytes, filename = download_media(url, mtype)
+            if mtype == "image" and first_image_size is None:
+                first_image_size = probe_image_size(file_bytes)
+                if first_image_size:
+                    width, height = first_image_size
+                    print(f"  First image size: {width}x{height}")
             uploaded_name = upload_to_comfyui(file_bytes, filename)
 
             node_id, field = targets.pop(0)
             workflow[node_id]["inputs"][field] = uploaded_name
             print(f"  {mtype} -> node {node_id}.{field}")
 
-        # ── 4. Apply overrides ──
+        # ── 4. Apply output canvas ──
+        canvas = resolve_canvas_dimensions(input_data, first_image_size)
+        if canvas:
+            width, height, aspect_ratio, resolution = canvas
+            updated = apply_canvas_dimensions(workflow, width, height)
+            if updated:
+                print(
+                    f"  Canvas: {width}x{height} "
+                    f"({aspect_ratio}, {resolution}) -> nodes {updated}"
+                )
+
+        # ── 5. Apply overrides ──
         overrides = input_data.get("overrides", {})
         for node_id, params in overrides.items():
             if node_id in workflow:
@@ -504,17 +662,17 @@ def handler(event):
             else:
                 print(f"  Warning: override target node {node_id} not in workflow")
 
-        # ── 4b. Auto-set switch booleans from metadata ──
+        # ── 5b. Auto-set switch booleans from metadata ──
         if meta:
             apply_switch_booleans(workflow, meta, num_optional_images, has_audio)
 
-        # ── 5. Submit ──
+        # ── 6. Submit ──
         prompt_id = submit_workflow(workflow)
 
-        # ── 6. Wait ──
+        # ── 7. Wait ──
         outputs = wait_for_completion(prompt_id)
 
-        # ── 7. Collect and upload outputs ──
+        # ── 8. Collect and upload outputs ──
         output_files = collect_output_files(outputs, job_start_time=start_time)
         if not output_files:
             return {"status": "error", "error": "No output files produced"}
